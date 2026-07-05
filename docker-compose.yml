@@ -1,0 +1,7 @@
+services:
+  app:
+    image: ghcr.io/tuor4eg/scroller:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3002:80"
+
