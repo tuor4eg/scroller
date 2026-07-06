@@ -8,7 +8,7 @@ export const GAMEPLAY_CONFIG = {
         height: 50,
         bottomOffset: 80,
         speed: 320,
-        initialLives: 3,
+        maxHealth: 3,
         damagePerHit: 1,
         invulnerabilityDuration: 1500,
     },
@@ -20,17 +20,6 @@ export const GAMEPLAY_CONFIG = {
         fireRate: 250,
         destroyY: -20,
         damage: 1,
-    },
-    enemy: {
-        width: 48,
-        height: 36,
-        speed: 180,
-        spawnRate: 1000,
-        minSpawnRate: 450,
-        speedIncreasePerSecond: 3,
-        spawnRateDecreasePerSecond: 8,
-        hitPoints: 1,
-        carrierHitPoints: 3,
     },
 } as const
 

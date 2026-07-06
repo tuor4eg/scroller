@@ -1,55 +1,28 @@
 import { GameObjects, Input, Math as PhaserMath, Scene, Types, Geom } from 'phaser'
 import { GAME_CONFIG, type GameConfig } from '../config'
+import type { EnemyType } from '../config/enemyConfig'
+import { ModuleKind } from '../config/moduleConfig'
+import { updateEnemyAttack } from '../helpers/enemyAttack'
+import { updateEnemyMovement } from '../helpers/enemyMovement'
+import type {
+    ActiveModule,
+    Bullet,
+    Enemy,
+    EnemyBullet,
+    GameKeys,
+    ModulePickup,
+    Star,
+} from '../types/gameplay'
 import {
     createHud,
     setGameOverVisible,
     setPauseVisible,
-    updateLivesText,
+    setStartVisible,
+    updateHealthBar,
     updateModuleSlotTexts,
     updateScoreText,
     type Hud,
 } from '../ui/hud'
-
-type GameKeys = {
-    left: Input.Keyboard.Key
-    right: Input.Keyboard.Key
-    shoot: Input.Keyboard.Key
-}
-
-type Star = {
-    object: GameObjects.Arc
-    speed: number
-}
-
-type Bullet = {
-    object: GameObjects.Rectangle
-    velocityX: number
-    velocityY: number
-    damage: number
-}
-
-type Enemy = {
-    body: GameObjects.Polygon
-    label?: GameObjects.Text
-    carriesModule: boolean
-    hitPoints: number
-    maxHitPoints: number
-    healthBarBackground?: GameObjects.Rectangle
-    healthBarFill?: GameObjects.Rectangle
-}
-
-type ModulePickup = {
-    body: GameObjects.Rectangle
-    label: GameObjects.Text
-    type: string
-}
-
-type ActiveModule = {
-    type: string
-    label: string
-    remainingMs: number
-    order: number
-}
 
 export class Game extends Scene {
     private readonly config: GameConfig = GAME_CONFIG
@@ -61,6 +34,7 @@ export class Game extends Scene {
     private lastShotTime = 0
 
     private enemies!: Enemy[]
+    private enemyBullets!: EnemyBullet[]
     private lastEnemySpawnTime = 0
     private gameplayTime = 0
 
@@ -80,9 +54,10 @@ export class Game extends Scene {
     private isGameOver = false
     private restartKey!: Input.Keyboard.Key
 
+    private hasStarted = false
     private isPaused = false
 
-    private lives = this.config.player.initialLives
+    private health: number = this.config.player.maxHealth
 
     private isInvulnerable = false
     private invulnerableUntil = 0
@@ -91,7 +66,7 @@ export class Game extends Scene {
         super('Game')
     }
 
-    create() {
+    create(data: { autoStart?: boolean } = {}) {
         this.resetGameState()
 
         const { width, height } = this.scale
@@ -115,6 +90,19 @@ export class Game extends Scene {
         this.restartKey = this.input.keyboard!.addKey(Input.Keyboard.KeyCodes.ENTER)
 
         this.hud = createHud(this, this.config)
+        this.hud.startButton.on('pointerdown', () => {
+            if (this.isGameOver) {
+                this.restartAfterGameOver()
+
+                return
+            }
+
+            this.startGame()
+        })
+
+        if (data.autoStart) {
+            this.startGame()
+        }
     }
 
     private createStarfield(width: number, height: number) {
@@ -182,9 +170,13 @@ export class Game extends Scene {
     update(time: number, delta: number) {
         this.updateStarfield(delta)
 
+        if (!this.hasStarted) {
+            return
+        }
+
         if (this.isGameOver) {
             if (this.restartKey.isDown) {
-                this.scene.restart()
+                this.restartAfterGameOver()
             }
 
             return
@@ -237,6 +229,8 @@ export class Game extends Scene {
         }
 
         this.updateEnemies(delta)
+        this.updateEnemyAttacks()
+        this.updateEnemyBullets(delta)
 
         if (time - this.lastModuleSpawnTime > this.config.module.spawnRate) {
             this.trySpawnModule()
@@ -251,6 +245,7 @@ export class Game extends Scene {
 
         this.checkBulletEnemyCollisions()
 
+        this.checkEnemyBulletPlayerCollisions(time)
         this.checkEnemyPlayerCollisions(time)
     }
 
@@ -380,8 +375,10 @@ export class Game extends Scene {
         const carriesModule = (
             PhaserMath.Between(1, 100) <= this.config.enemy.carrierSpawnChance
         )
-        const enemyWidth = this.getEnemyWidth(carriesModule)
-        const enemyHeight = this.getEnemyHeight(carriesModule)
+        const enemyType = this.getEnemyType(carriesModule)
+        const enemyConfig = this.config.enemy.types[enemyType]
+        const enemyWidth = enemyConfig.width
+        const enemyHeight = enemyConfig.height
         const minSpawnX = Math.max(
             enemyWidth / 2,
             this.config.player.width / 2,
@@ -396,17 +393,24 @@ export class Game extends Scene {
             maxSpawnX,
         )
 
-        const enemy = this.createEnemy(x, -enemyHeight, carriesModule)
+        const enemy = this.createEnemy(x, -enemyHeight, enemyType, carriesModule)
 
         this.enemies.push(enemy)
     }
 
-    private createEnemy(x: number, y: number, carriesModule: boolean) {
-        const enemyWidth = this.getEnemyWidth(carriesModule)
-        const enemyHeight = this.getEnemyHeight(carriesModule)
-        const maxHitPoints = carriesModule
-            ? this.config.enemy.carrierHitPoints
-            : this.config.enemy.hitPoints
+    private createEnemy(
+        x: number,
+        y: number,
+        type: EnemyType,
+        carriesModule: boolean,
+    ) {
+        const enemyConfig = this.config.enemy.types[type]
+        const enemyWidth = enemyConfig.width
+        const enemyHeight = enemyConfig.height
+        const maxHitPoints = enemyConfig.hitPoints
+        const enemyAttack = 'attack' in enemyConfig
+            ? enemyConfig.attack
+            : undefined
 
         const enemyPoints = [
             0,
@@ -425,9 +429,7 @@ export class Game extends Scene {
             x,
             y,
             enemyPoints,
-            carriesModule
-                ? this.config.enemy.carrierColor
-                : this.config.enemy.color,
+            enemyConfig.color,
         )
 
         enemy.setStrokeStyle(
@@ -437,7 +439,17 @@ export class Game extends Scene {
 
         const createdEnemy: Enemy = {
             body: enemy,
+            type,
+            movement: enemyConfig.movement,
+            attack: enemyAttack,
+            lastAttackTime: enemyAttack
+                ? -enemyAttack.cooldown
+                : 0,
+            spawnX: x,
+            age: 0,
             carriesModule,
+            speed: enemyConfig.speed,
+            scoreReward: enemyConfig.scoreReward,
             hitPoints: maxHitPoints,
             maxHitPoints,
         }
@@ -470,7 +482,7 @@ export class Game extends Scene {
         const label = this.add.text(
             x,
             y + enemyHeight * 0.38,
-            this.config.enemy.carrierLabel,
+            this.config.enemy.types.carrier.label,
             {
                 fontFamily: 'Arial',
                 fontSize: '16px',
@@ -483,27 +495,39 @@ export class Game extends Scene {
         return createdEnemy
     }
 
-    private getEnemyWidth(carriesModule: boolean) {
-        return carriesModule
-            ? this.config.enemy.width
-            : this.config.enemy.width * this.config.enemy.baseScale
-    }
+    private getEnemyType(carriesModule: boolean): EnemyType {
+        if (carriesModule) {
+            return 'carrier'
+        }
 
-    private getEnemyHeight(carriesModule: boolean) {
-        return carriesModule
-            ? this.config.enemy.height
-            : this.config.enemy.height * this.config.enemy.baseScale
+        const roll = PhaserMath.Between(1, 100)
+
+        if (roll <= this.config.enemy.heavySpawnChance) {
+            return 'heavy'
+        }
+
+        if (
+            roll <=
+            this.config.enemy.heavySpawnChance + this.config.enemy.sturdySpawnChance
+        ) {
+            return 'sturdy'
+        }
+
+        return 'basic'
     }
 
     private updateEnemies(delta: number) {
         const deltaInSeconds = delta / this.config.time.millisecondsPerSecond
-        const distance = this.getCurrentEnemySpeed() * deltaInSeconds
+        const speedTimeMultiplier = this.getEnemySpeedTimeMultiplier()
 
         this.enemies.forEach((enemy) => {
-            enemy.body.y += distance
+            const distance = enemy.speed * speedTimeMultiplier * deltaInSeconds
+
+            enemy.age += delta
+            updateEnemyMovement(enemy, distance)
 
             if (enemy.label) {
-                enemy.label.y += distance
+                enemy.label.setPosition(enemy.body.x, enemy.label.y + distance)
             }
 
             this.updateEnemyHealthBarPosition(enemy)
@@ -525,6 +549,31 @@ export class Game extends Scene {
         enemy.label?.destroy()
         enemy.healthBarBackground?.destroy()
         enemy.healthBarFill?.destroy()
+    }
+
+    private updateEnemyAttacks() {
+        this.enemies.forEach((enemy) => {
+            updateEnemyAttack(this, enemy, this.enemyBullets)
+        })
+    }
+
+    private updateEnemyBullets(delta: number) {
+        const deltaInSeconds = delta / this.config.time.millisecondsPerSecond
+        const speedTimeMultiplier = this.getEnemySpeedTimeMultiplier()
+
+        this.enemyBullets.forEach((bullet) => {
+            bullet.object.y += bullet.speed * speedTimeMultiplier * deltaInSeconds
+        })
+
+        this.enemyBullets = this.enemyBullets.filter((bullet) => {
+            if (bullet.object.y > this.scale.height + bullet.object.height) {
+                bullet.object.destroy()
+
+                return false
+            }
+
+            return true
+        })
     }
 
     private updateEnemyHealthBarPosition(enemy: Enemy) {
@@ -558,12 +607,12 @@ export class Game extends Scene {
         )
     }
 
-    private getCurrentEnemySpeed() {
+    private getEnemySpeedTimeMultiplier() {
         const gameplaySeconds = this.gameplayTime / this.config.time.millisecondsPerSecond
 
         return (
-            this.config.enemy.speed +
-            gameplaySeconds * this.config.enemy.speedIncreasePerSecond
+            1 +
+            gameplaySeconds * this.config.enemy.speedTimeMultiplierIncreasePerSecond
         )
     }
 
@@ -691,12 +740,27 @@ export class Game extends Scene {
     private collectModule(module: ModulePickup) {
         this.playTone(880, 0.08, 0.06)
 
+        const moduleEffect = this.getModuleEffect(module.type)
+
+        if (!moduleEffect) {
+            return
+        }
+
+        if (moduleEffect.kind === ModuleKind.Instant) {
+            this.applyInstantModule(moduleEffect)
+
+            return
+        }
+
         const duplicate = this.activeModules.find((activeModule) => {
             return activeModule.type === module.type
         })
 
         if (duplicate) {
-            duplicate.remainingMs = this.config.module.duration
+            if (duplicate.kind === ModuleKind.Temporary) {
+                duplicate.remainingMs = this.config.module.duration
+            }
+
             this.updateModuleHud()
 
             return
@@ -705,7 +769,10 @@ export class Game extends Scene {
         const activeModule = {
             type: module.type,
             label: module.type,
-            remainingMs: this.config.module.duration,
+            kind: moduleEffect.kind,
+            remainingMs: moduleEffect.kind === ModuleKind.Temporary
+                ? this.config.module.duration
+                : undefined,
             order: this.nextModuleOrder,
         }
 
@@ -729,13 +796,25 @@ export class Game extends Scene {
 
     private updateActiveModules(delta: number) {
         this.activeModules.forEach((module) => {
+            if (module.kind !== ModuleKind.Temporary) {
+                return
+            }
+
+            if (module.remainingMs === undefined) {
+                return
+            }
+
             module.remainingMs -= delta
         })
 
         const activeModuleCount = this.activeModules.length
 
         this.activeModules = this.activeModules.filter((module) => {
-            return module.remainingMs > 0
+            if (module.kind !== ModuleKind.Temporary) {
+                return true
+            }
+
+            return (module.remainingMs ?? 0) > 0
         })
 
         if (this.activeModules.length !== activeModuleCount) {
@@ -751,6 +830,52 @@ export class Game extends Scene {
 
     private updateModuleHud() {
         updateModuleSlotTexts(this.hud, this.activeModules)
+    }
+
+    private getModuleEffect(type: string) {
+        return Object.values(this.config.module.effects).find((effect) => {
+            return effect.type === type
+        })
+    }
+
+    private applyInstantModule(
+        moduleEffect: ReturnType<Game['getModuleEffect']>,
+    ) {
+        if (!moduleEffect || moduleEffect.kind !== ModuleKind.Instant) {
+            return
+        }
+
+        if (moduleEffect.type === this.config.module.effects.heal.type) {
+            this.healPlayer(moduleEffect.amount)
+
+            return
+        }
+
+        if (moduleEffect.type === this.config.module.effects.resetTimers.type) {
+            this.refreshTemporaryModuleTimers()
+        }
+    }
+
+    private healPlayer(amount: number) {
+        this.health = PhaserMath.Clamp(
+            this.health + amount,
+            0,
+            this.config.player.maxHealth,
+        )
+
+        updateHealthBar(this.hud, this.health, this.config.player.maxHealth)
+    }
+
+    private refreshTemporaryModuleTimers() {
+        this.activeModules.forEach((module) => {
+            if (module.kind !== ModuleKind.Temporary) {
+                return
+            }
+
+            module.remainingMs = this.config.module.duration
+        })
+
+        this.updateModuleHud()
     }
 
     private destroyModulePickup(module: ModulePickup) {
@@ -801,7 +926,7 @@ export class Game extends Scene {
 
         this.destroyEnemy(enemy)
 
-        this.score += this.config.score.hitReward
+        this.score += enemy.scoreReward
         updateScoreText(this.hud, this.score)
     }
 
@@ -854,6 +979,44 @@ export class Game extends Scene {
         this.enemies = this.enemies.filter((enemy) => enemy.body.active)
     }
 
+    private checkEnemyBulletPlayerCollisions(time: number) {
+        if (this.isInvulnerable) {
+            return
+        }
+
+        this.enemyBullets.forEach((bullet) => {
+            if (!bullet.object.active || this.isGameOver || this.isInvulnerable) {
+                return
+            }
+
+            const isHit = Geom.Intersects.RectangleToRectangle(
+                bullet.object.getBounds(),
+                this.player.getBounds(),
+            )
+
+            if (!isHit) {
+                return
+            }
+
+            const hitX = bullet.object.x
+            const hitY = bullet.object.y
+
+            bullet.object.destroy()
+
+            if (this.hasShieldModule()) {
+                this.createHitEffect(hitX, hitY)
+
+                return
+            }
+
+            this.takeDamage(time, bullet.damage)
+        })
+
+        this.enemyBullets = this.enemyBullets.filter((bullet) => {
+            return bullet.object.active
+        })
+    }
+
     private updatePlayerInvulnerability(time: number) {
         if (!this.isInvulnerable) {
             return
@@ -879,17 +1042,27 @@ export class Game extends Scene {
 
     private finishGame() {
         this.isGameOver = true
-        setGameOverVisible(this.hud, true)
+        setGameOverVisible(this.hud, true, this.score)
         this.playTone(120, 0.35, 0.08, 'sawtooth')
     }
 
+    private startGame() {
+        this.hasStarted = true
+        setStartVisible(this.hud, false)
+    }
+
+    private restartAfterGameOver() {
+        this.scene.restart({ autoStart: true })
+    }
+
     private resetGameState() {
+        this.hasStarted = false
         this.isGameOver = false
         this.isPaused = false
         this.isInvulnerable = false
 
         this.score = this.config.score.initial
-        this.lives = this.config.player.initialLives
+        this.health = this.config.player.maxHealth
 
         this.lastShotTime = 0
         this.lastEnemySpawnTime = 0
@@ -900,6 +1073,7 @@ export class Game extends Scene {
 
         this.bullets = []
         this.enemies = []
+        this.enemyBullets = []
         this.modulePickups = []
         this.activeModules = []
     }
@@ -909,13 +1083,16 @@ export class Game extends Scene {
         setPauseVisible(this.hud, this.isPaused)
     }
 
-    private takeDamage(time: number) {
-        this.lives -= this.config.player.damagePerHit
-        updateLivesText(this.hud, this.lives)
+    private takeDamage(
+        time: number,
+        damage: number = this.config.player.damagePerHit,
+    ) {
+        this.health -= damage
+        updateHealthBar(this.hud, this.health, this.config.player.maxHealth)
         this.createPlayerDamageEffect()
         this.playTone(150, 0.12, 0.08, 'square')
 
-        if (this.lives <= 0) {
+        if (this.health <= 0) {
             this.finishGame()
 
             return
@@ -935,7 +1112,7 @@ export class Game extends Scene {
             0.85,
         )
 
-        effect.setStrokeStyle(3, this.config.enemy.color)
+        effect.setStrokeStyle(3, this.config.enemy.types.basic.color)
 
         this.tweens.add({
             targets: effect,

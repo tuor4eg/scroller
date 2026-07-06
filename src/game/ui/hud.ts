@@ -1,13 +1,19 @@
-import { GameObjects, Scene } from 'phaser'
+import { GameObjects, Math as PhaserMath, Scene } from 'phaser'
 import type { GameConfig } from '../config'
 
 export type Hud = {
     scoreText: GameObjects.Text
-    livesText: GameObjects.Text
+    healthBarBackground: GameObjects.Rectangle
+    healthBarFill: GameObjects.Rectangle
     moduleSlotBackgrounds: GameObjects.Rectangle[]
     moduleSlotTexts: GameObjects.Text[]
     pauseText: GameObjects.Text
     gameOverText: GameObjects.Text
+    startOverlay: GameObjects.Rectangle
+    startTitleText: GameObjects.Text
+    startHintText: GameObjects.Text
+    startButton: GameObjects.Rectangle
+    startButtonText: GameObjects.Text
 }
 
 export const createHud = (scene: Scene, config: GameConfig): Hud => {
@@ -26,20 +32,24 @@ export const createHud = (scene: Scene, config: GameConfig): Hud => {
     scoreText.setStroke('#1d4ed8', 3)
     scoreText.setShadow(2, 2, '#000000', 0, false, true)
 
-    const livesText = scene.add.text(
-        config.hud.x,
-        config.hud.livesY,
-        formatLives(config.player.initialLives),
-        {
-            fontFamily: config.hud.fontFamily,
-            fontSize: config.hud.livesFontSize,
-            fontStyle: 'bold',
-            color: '#ef4444',
-        },
-    )
+    const healthBarBackground = scene.add.rectangle(
+        config.hud.healthBarX,
+        config.hud.healthBarY,
+        config.hud.healthBarWidth,
+        config.hud.healthBarHeight,
+        config.hud.healthBarBackgroundColor,
+        0.9,
+    ).setOrigin(0)
 
-    livesText.setStroke('#7f1d1d', 4)
-    livesText.setShadow(2, 2, '#000000', 0, false, true)
+    healthBarBackground.setStrokeStyle(1, config.hud.healthBarStrokeColor, 0.8)
+
+    const healthBarFill = scene.add.rectangle(
+        config.hud.healthBarX,
+        config.hud.healthBarY,
+        config.hud.healthBarWidth,
+        config.hud.healthBarHeight,
+        config.hud.healthBarFillColor,
+    ).setOrigin(0)
 
     const moduleSlotBackgrounds = []
     const moduleSlotTexts = []
@@ -102,13 +112,79 @@ export const createHud = (scene: Scene, config: GameConfig): Hud => {
 
     gameOverText.setVisible(false)
 
+    const startOverlay = scene.add.rectangle(
+        0,
+        0,
+        scene.scale.width,
+        scene.scale.height,
+        0x020617,
+        0.86,
+    ).setOrigin(0)
+
+    const startTitleText = scene.add.text(
+        scene.scale.width / 2,
+        scene.scale.height / 2 - 128,
+        'SCROLLER',
+        {
+            fontFamily: config.hud.fontFamily,
+            fontSize: '38px',
+            fontStyle: 'bold',
+            color: '#ffffff',
+            align: 'center',
+        },
+    ).setOrigin(0.5)
+
+    startTitleText.setStroke('#1d4ed8', 4)
+    startTitleText.setShadow(2, 2, '#000000', 0, false, true)
+
+    const startHintText = scene.add.text(
+        scene.scale.width / 2,
+        scene.scale.height / 2 - 46,
+        'Move: A/D or arrows\nShoot: Space\nPause: Enter\nCollect modules and dodge fire',
+        {
+            fontFamily: 'Arial',
+            fontSize: '18px',
+            color: '#dbeafe',
+            align: 'center',
+            lineSpacing: 8,
+        },
+    ).setOrigin(0.5)
+
+    const startButton = scene.add.rectangle(
+        scene.scale.width / 2,
+        scene.scale.height / 2 + 82,
+        150,
+        44,
+        0x22c55e,
+    ).setInteractive({ useHandCursor: true })
+
+    startButton.setStrokeStyle(2, 0xffffff, 0.9)
+
+    const startButtonText = scene.add.text(
+        startButton.x,
+        startButton.y,
+        'START',
+        {
+            fontFamily: config.hud.fontFamily,
+            fontSize: '22px',
+            fontStyle: 'bold',
+            color: '#052e16',
+        },
+    ).setOrigin(0.5)
+
     return {
         scoreText,
-        livesText,
+        healthBarBackground,
+        healthBarFill,
         moduleSlotBackgrounds,
         moduleSlotTexts,
         pauseText,
         gameOverText,
+        startOverlay,
+        startTitleText,
+        startHintText,
+        startButton,
+        startButtonText,
     }
 }
 
@@ -116,19 +192,34 @@ export const updateScoreText = (hud: Hud, score: number) => {
     hud.scoreText.setText(formatScore(score))
 }
 
-export const updateLivesText = (hud: Hud, lives: number) => {
-    hud.livesText.setText(formatLives(lives))
+export const updateHealthBar = (
+    hud: Hud,
+    health: number,
+    maxHealth: number,
+) => {
+    const healthRatio = PhaserMath.Clamp(health / maxHealth, 0, 1)
+
+    hud.healthBarFill.setDisplaySize(
+        hud.healthBarBackground.width * healthRatio,
+        hud.healthBarBackground.height,
+    )
 }
 
 export const updateModuleSlotTexts = (
     hud: Hud,
-    modules: { label: string, remainingMs: number }[],
+    modules: { label: string, remainingMs?: number }[],
 ) => {
     hud.moduleSlotTexts.forEach((slotText, index) => {
         const module = modules[index]
 
         if (!module) {
             slotText.setText(formatModuleSlot(index))
+
+            return
+        }
+
+        if (module.remainingMs === undefined) {
+            slotText.setText(formatModuleSlot(index, module.label))
 
             return
         }
@@ -143,20 +234,45 @@ export const setPauseVisible = (hud: Hud, isVisible: boolean) => {
     hud.pauseText.setVisible(isVisible)
 }
 
-export const setGameOverVisible = (hud: Hud, isVisible: boolean) => {
-    if (isVisible) {
-        hud.gameOverText.setToTop()
+export const setGameOverVisible = (
+    hud: Hud,
+    isVisible: boolean,
+    score = 0,
+) => {
+    hud.gameOverText.setVisible(false)
+
+    if (!isVisible) {
+        setStartVisible(hud, false)
+
+        return
     }
 
-    hud.gameOverText.setVisible(isVisible)
+    hud.startTitleText.setText('GAME OVER')
+    hud.startHintText.setText(`Score: ${score}\nPress Enter to restart`)
+    hud.startButtonText.setText('RESTART')
+    setStartVisible(hud, true)
+}
+
+export const setStartVisible = (hud: Hud, isVisible: boolean) => {
+    hud.startOverlay.setVisible(isVisible)
+    hud.startTitleText.setVisible(isVisible)
+    hud.startHintText.setVisible(isVisible)
+    hud.startButton.setVisible(isVisible)
+    hud.startButtonText.setVisible(isVisible)
+
+    if (!isVisible) {
+        return
+    }
+
+    hud.startOverlay.setToTop()
+    hud.startTitleText.setToTop()
+    hud.startHintText.setToTop()
+    hud.startButton.setToTop()
+    hud.startButtonText.setToTop()
 }
 
 const formatScore = (score: number) => {
     return `Score: ${score}`
-}
-
-const formatLives = (lives: number) => {
-    return Array.from({ length: Math.max(0, lives) }, () => '♥').join(' ')
 }
 
 const formatModuleSlot = (
@@ -164,8 +280,12 @@ const formatModuleSlot = (
     label?: string,
     remainingSeconds?: number,
 ) => {
-    if (!label || remainingSeconds === undefined) {
+    if (!label) {
         return `M${index + 1} -`
+    }
+
+    if (remainingSeconds === undefined) {
+        return `M${index + 1} ${label} ∞`
     }
 
     return `M${index + 1} ${label} ${remainingSeconds}s`
