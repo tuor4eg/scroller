@@ -1,9 +1,5 @@
 import { GameObjects, Input } from 'phaser'
-import type {
-    EnemyAttackType,
-    EnemyMovementType,
-    EnemyType,
-} from '../config/enemyConfig'
+import type { EnemyAttackType, EnemyMovementType } from '../config/enemyConfig'
 import type { ModuleKind } from '../config/moduleConfig'
 
 export type EnemyMovement = {
@@ -28,46 +24,14 @@ export type GameKeys = {
     shoot: Input.Keyboard.Key
 }
 
+export type WeaponParameters = {
+    fireRate: number
+    bulletAngles: number[]
+}
+
 export type Star = {
     object: GameObjects.Arc
     speed: number
-}
-
-export type Bullet = {
-    object: GameObjects.Rectangle
-    velocityX: number
-    velocityY: number
-    damage: number
-}
-
-export type Enemy = {
-    body: GameObjects.Polygon
-    label?: GameObjects.Text
-    type: EnemyType
-    movement: EnemyMovement
-    attack?: EnemyAttack
-    lastAttackTime: number
-    spawnX: number
-    age: number
-    carriesModule: boolean
-    speed: number
-    scoreReward: number
-    hitPoints: number
-    maxHitPoints: number
-    healthBarBackground?: GameObjects.Rectangle
-    healthBarFill?: GameObjects.Rectangle
-}
-
-export type EnemyBullet = {
-    object: GameObjects.Rectangle
-    speed: number
-    damage: number
-}
-
-export type ModulePickup = {
-    body: GameObjects.Rectangle
-    label: GameObjects.Text
-    type: string
 }
 
 export type ActiveModule = {

@@ -1,15 +1,12 @@
-import { GameObjects } from 'phaser'
+import { Scene } from 'phaser'
 import { EnemyAttackType } from '../config/enemyConfig'
-import type { Enemy, EnemyBullet } from '../types/gameplay'
-
-type EnemyAttackScene = {
-    add: GameObjects.GameObjectFactory
-}
+import type { Enemy } from '../entities/Enemy'
+import { Projectile } from '../entities/Projectile'
 
 export const updateEnemyAttack = (
-    scene: EnemyAttackScene,
+    scene: Scene,
     enemy: Enemy,
-    enemyBullets: EnemyBullet[],
+    enemyBullets: Projectile[],
 ) => {
     if (!enemy.body.active || !enemy.attack) {
         return
@@ -28,25 +25,24 @@ export const updateEnemyAttack = (
 }
 
 const shootSingleEnemyBullet = (
-    scene: EnemyAttackScene,
+    scene: Scene,
     enemy: Enemy,
-    enemyBullets: EnemyBullet[],
+    enemyBullets: Projectile[],
 ) => {
     if (!enemy.attack) {
         return
     }
 
-    const bullet = scene.add.rectangle(
-        enemy.body.x,
-        enemy.body.y + enemy.body.height / 2,
-        enemy.attack.bulletWidth,
-        enemy.attack.bulletHeight,
-        enemy.attack.bulletColor,
+    enemyBullets.push(
+        new Projectile(scene, {
+            x: enemy.body.x,
+            y: enemy.body.y + enemy.body.height / 2,
+            width: enemy.attack.bulletWidth,
+            height: enemy.attack.bulletHeight,
+            color: enemy.attack.bulletColor,
+            velocityX: 0,
+            velocityY: enemy.attack.bulletSpeed,
+            damage: enemy.attack.damage,
+        }),
     )
-
-    enemyBullets.push({
-        object: bullet,
-        speed: enemy.attack.bulletSpeed,
-        damage: enemy.attack.damage,
-    })
 }

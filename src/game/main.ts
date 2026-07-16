@@ -1,4 +1,5 @@
 import { Game as MainGame } from './scenes/Game'
+import { UIScene } from './scenes/UIScene'
 import { AUTO, Game, Scale, Types } from 'phaser'
 import { GAMEPLAY_CONFIG } from './config/gameplayConfig'
 
@@ -20,6 +21,7 @@ const config: Types.Core.GameConfig = {
     },
     scene: [
         MainGame,
+        UIScene,
     ],
 }
 

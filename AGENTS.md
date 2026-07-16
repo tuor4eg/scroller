@@ -51,6 +51,19 @@ Each task should:
 * preserve existing behavior unless requested
 * avoid large rewrites unless requested
 
+Environment variables:
+
+* every project-specific environment variable must be documented in `.env.example`
+* add a variable to `.env.example` in the same change that introduces it
+* remove a variable from `.env.example` when the project no longer uses it
+* never add secrets or real credentials to `.env.example`; use safe example values
+
+Controls documentation:
+
+* every change to player controls must update the in-game instructions in the same change
+* keep the controls section in `README.md` synchronized with the actual controls
+* remove obsolete controls from both places when they are no longer used
+
 After changes, briefly explain:
 
 * what files changed

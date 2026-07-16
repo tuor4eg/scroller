@@ -1,5 +1,5 @@
 import { EnemyMovementType } from '../config/enemyConfig'
-import type { Enemy } from '../types/gameplay'
+import type { Enemy } from '../entities/Enemy'
 
 export const updateEnemyMovement = (enemy: Enemy, distance: number) => {
     enemy.body.y += distance

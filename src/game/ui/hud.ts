@@ -1,10 +1,14 @@
 import { GameObjects, Math as PhaserMath, Scene } from 'phaser'
 import type { GameConfig } from '../config'
+import type { RunResult } from '../state/RunState'
 
 export type Hud = {
     scoreText: GameObjects.Text
     healthBarBackground: GameObjects.Rectangle
     healthBarFill: GameObjects.Rectangle
+    missionProgressBackground: GameObjects.Rectangle
+    missionProgressFill: GameObjects.Rectangle
+    missionProgressText: GameObjects.Text
     moduleSlotBackgrounds: GameObjects.Rectangle[]
     moduleSlotTexts: GameObjects.Text[]
     pauseText: GameObjects.Text
@@ -50,6 +54,41 @@ export const createHud = (scene: Scene, config: GameConfig): Hud => {
         config.hud.healthBarHeight,
         config.hud.healthBarFillColor,
     ).setOrigin(0)
+
+    const missionProgressBackground = scene.add.rectangle(
+        config.hud.missionProgressX,
+        config.hud.missionProgressY,
+        config.hud.missionProgressWidth,
+        config.hud.missionProgressHeight,
+        config.hud.missionProgressBackgroundColor,
+        0.9,
+    ).setOrigin(0)
+
+    missionProgressBackground.setStrokeStyle(
+        1,
+        config.hud.missionProgressStrokeColor,
+        0.8,
+    )
+
+    const missionProgressFill = scene.add.rectangle(
+        config.hud.missionProgressX,
+        config.hud.missionProgressY,
+        config.hud.missionProgressWidth,
+        config.hud.missionProgressHeight,
+        config.hud.missionProgressFillColor,
+    ).setOrigin(0)
+
+    const missionProgressText = scene.add.text(
+        config.hud.missionProgressX + config.hud.missionProgressWidth / 2,
+        config.hud.missionProgressY + config.hud.missionProgressHeight / 2,
+        '',
+        {
+            fontFamily: config.hud.fontFamily,
+            fontSize: '11px',
+            fontStyle: 'bold',
+            color: '#ffffff',
+        },
+    ).setOrigin(0.5)
 
     const moduleSlotBackgrounds = []
     const moduleSlotTexts = []
@@ -140,7 +179,7 @@ export const createHud = (scene: Scene, config: GameConfig): Hud => {
     const startHintText = scene.add.text(
         scene.scale.width / 2,
         scene.scale.height / 2 - 46,
-        'Move: A/D or arrows\nShoot: Space\nPause: Enter\nCollect modules and dodge fire',
+        'Move: A/D or Left/Right\nSwitch layer: Up/Down\nShoot: Space\nPause: Enter\nCollect modules and dodge fire',
         {
             fontFamily: 'Arial',
             fontSize: '18px',
@@ -176,6 +215,9 @@ export const createHud = (scene: Scene, config: GameConfig): Hud => {
         scoreText,
         healthBarBackground,
         healthBarFill,
+        missionProgressBackground,
+        missionProgressFill,
+        missionProgressText,
         moduleSlotBackgrounds,
         moduleSlotTexts,
         pauseText,
@@ -203,6 +245,25 @@ export const updateHealthBar = (
         hud.healthBarBackground.width * healthRatio,
         hud.healthBarBackground.height,
     )
+}
+
+export const updateMissionProgress = (
+    hud: Hud,
+    progress: number,
+    min: number,
+    max: number,
+) => {
+    const progressRatio = PhaserMath.Clamp(
+        (progress - min) / (max - min),
+        0,
+        1,
+    )
+
+    hud.missionProgressFill.setDisplaySize(
+        hud.missionProgressBackground.width * progressRatio,
+        hud.missionProgressBackground.height,
+    )
+    hud.missionProgressText.setText(`MISSION ${Math.round(progress)}`)
 }
 
 export const updateModuleSlotTexts = (
@@ -238,6 +299,7 @@ export const setGameOverVisible = (
     hud: Hud,
     isVisible: boolean,
     score = 0,
+    result?: RunResult,
 ) => {
     hud.gameOverText.setVisible(false)
 
@@ -247,7 +309,7 @@ export const setGameOverVisible = (
         return
     }
 
-    hud.startTitleText.setText('GAME OVER')
+    hud.startTitleText.setText(result === 'victory' ? 'VICTORY' : 'DEFEAT')
     hud.startHintText.setText(`Score: ${score}\nPress Enter to restart`)
     hud.startButtonText.setText('RESTART')
     setStartVisible(hud, true)

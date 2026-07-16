@@ -18,6 +18,16 @@ This template has been updated for:
 
 [Node.js](https://nodejs.org) is required to install dependencies and run scripts via `npm`.
 
+## Controls
+
+| Action | Keys |
+|--------|------|
+| Move left or right | `A` / `D` or `Left` / `Right` |
+| Switch layer | `Up` / `Down` |
+| Shoot | `Space` |
+| Pause or resume | `Enter` |
+| Restart after the run ends | `Enter` |
+
 ## Available Commands
 
 | Command | Description |

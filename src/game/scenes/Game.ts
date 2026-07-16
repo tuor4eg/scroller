@@ -1,28 +1,27 @@
-import { GameObjects, Input, Math as PhaserMath, Scene, Types, Geom } from 'phaser'
+import { GameObjects, Geom, Math as PhaserMath, Scene, Scenes } from 'phaser'
 import { GAME_CONFIG, type GameConfig } from '../config'
-import type { EnemyType } from '../config/enemyConfig'
-import { ModuleKind } from '../config/moduleConfig'
-import { updateEnemyAttack } from '../helpers/enemyAttack'
-import { updateEnemyMovement } from '../helpers/enemyMovement'
-import type {
-    ActiveModule,
-    Bullet,
-    Enemy,
-    EnemyBullet,
-    GameKeys,
-    ModulePickup,
-    Star,
-} from '../types/gameplay'
-import {
-    createHud,
-    setGameOverVisible,
-    setPauseVisible,
-    setStartVisible,
-    updateHealthBar,
-    updateModuleSlotTexts,
-    updateScoreText,
-    type Hud,
-} from '../ui/hud'
+import { PlayerController } from '../controllers/PlayerController'
+import { Enemy } from '../entities/Enemy'
+import { ModulePickup } from '../entities/ModulePickup'
+import { Player } from '../entities/Player'
+import { Projectile } from '../entities/Projectile'
+import { EnemySpawner } from '../spawners/EnemySpawner'
+import { ModuleSpawner } from '../spawners/ModuleSpawner'
+import { RunState } from '../state/RunState'
+import { CombatSystem } from '../systems/CombatSystem'
+import { CleanupSystem } from '../systems/CleanupSystem'
+import { LayerSystem } from '../systems/LayerSystem'
+import { MissionProgress } from '../systems/MissionProgress'
+import { ModuleSystem } from '../systems/ModuleSystem'
+import { RunSystem } from '../systems/RunSystem'
+import type { Star } from '../types/gameplay'
+import { DebugOverlay } from '../ui/DebugOverlay'
+import { countEventListeners } from '../helpers/countEventListeners'
+import type { UIScene } from './UIScene'
+
+const DEBUG_OVERLAY_ENABLED = (
+    import.meta.env.DEV && import.meta.env.VITE_DEBUG_OVERLAY !== 'false'
+)
 
 export class Game extends Scene {
     private readonly config: GameConfig = GAME_CONFIG
@@ -30,78 +29,130 @@ export class Game extends Scene {
 
     private stars!: Star[]
 
-    private bullets!: Bullet[]
-    private lastShotTime = 0
+    private bullets!: Projectile[]
 
     private enemies!: Enemy[]
-    private enemyBullets!: EnemyBullet[]
-    private lastEnemySpawnTime = 0
-    private gameplayTime = 0
+    private enemySpawner!: EnemySpawner
+    private enemyBullets!: Projectile[]
 
     private modulePickups!: ModulePickup[]
-    private activeModules!: ActiveModule[]
-    private lastModuleSpawnTime = 0
-    private nextModuleOrder = 0
+    private moduleSpawner!: ModuleSpawner
+    private moduleSystem!: ModuleSystem
 
-    private player!: GameObjects.Polygon
+    private player!: Player
+    private playerController!: PlayerController
+    private layerSystem!: LayerSystem
     private shieldVisual!: GameObjects.Arc
-    private cursors!: Types.Input.Keyboard.CursorKeys
-    private keys!: GameKeys
 
-    private score = this.config.score.initial
-    private hud!: Hud
-
-    private isGameOver = false
-    private restartKey!: Input.Keyboard.Key
-
-    private hasStarted = false
-    private isPaused = false
-
-    private health: number = this.config.player.maxHealth
-
-    private isInvulnerable = false
-    private invulnerableUntil = 0
+    private runState!: RunState
+    private runSystem!: RunSystem
+    private combatSystem!: CombatSystem
+    private cleanupSystem!: CleanupSystem
+    private missionProgress!: MissionProgress
+    private debugOverlay?: DebugOverlay
+    private runNumber = 0
 
     constructor() {
         super('Game')
     }
 
     create(data: { autoStart?: boolean } = {}) {
+        this.runNumber += 1
         this.resetGameState()
+        this.events.once(Scenes.Events.SHUTDOWN, () => this.cleanupRun())
 
         const { width, height } = this.scale
 
         this.createStarfield(width, height)
+        this.enemySpawner = new EnemySpawner(
+            this,
+            this.config,
+            this.runState,
+            (enemy) => {
+                this.enemies.push(enemy)
+            },
+        )
+        this.moduleSpawner = new ModuleSpawner(
+            this,
+            this.config.module,
+            (pickup) => {
+                this.modulePickups.push(pickup)
+            },
+        )
 
-        this.player = this.createPlayer(
+        this.player = new Player(
+            this,
+            this.config.player,
+            this.config.bullet,
             width / 2,
             height - this.config.player.bottomOffset,
         )
+        this.playerController = new PlayerController(this, this.player)
+        this.layerSystem = new LayerSystem(
+            this,
+            this.config.layers,
+        )
         this.shieldVisual = this.createShieldVisual()
+        this.runSystem = new RunSystem(this, this.runState, () => {
+            this.playTone(120, 0.35, 0.08, 'sawtooth')
+        })
 
-        this.cursors = this.input.keyboard!.createCursorKeys()
-
-        this.keys = {
-            left: this.input.keyboard!.addKey(Input.Keyboard.KeyCodes.A),
-            right: this.input.keyboard!.addKey(Input.Keyboard.KeyCodes.D),
-            shoot: this.input.keyboard!.addKey(Input.Keyboard.KeyCodes.SPACE),
-        }
-
-        this.restartKey = this.input.keyboard!.addKey(Input.Keyboard.KeyCodes.ENTER)
-
-        this.hud = createHud(this, this.config)
-        this.hud.startButton.on('pointerdown', () => {
-            if (this.isGameOver) {
-                this.restartAfterGameOver()
-
-                return
-            }
-
-            this.startGame()
+        this.moduleSystem = new ModuleSystem(
+            this.config.module,
+            this.player,
+            {
+                playPickupTone: () => this.playTone(880, 0.08, 0.06),
+            },
+        )
+        this.missionProgress = new MissionProgress(
+            this.config.missionProgress,
+            this.runState,
+        )
+        this.cleanupSystem = new CleanupSystem(this, this.config)
+        this.combatSystem = new CombatSystem(
+            this,
+            this.config,
+            this.player,
+            this.runState,
+            {
+                getPlayerProjectiles: () => this.bullets,
+                setPlayerProjectiles: (projectiles) => {
+                    this.bullets = projectiles
+                },
+                getEnemies: () => this.enemies,
+                setEnemies: (enemies) => {
+                    this.enemies = enemies
+                },
+                getEnemyProjectiles: () => this.enemyBullets,
+                setEnemyProjectiles: (projectiles) => {
+                    this.enemyBullets = projectiles
+                },
+                hasShield: () => this.hasShieldModule(),
+                getScoreRewardMultiplier: () => {
+                    return this.layerSystem.getCurrentLayer()
+                        .scoreRewardMultiplier
+                },
+                dropModule: (x, y) => this.moduleSpawner.drop(x, y),
+                playerDied: () => {
+                    this.runSystem.finish('defeat', 'player-death')
+                },
+                playTone: (frequency, duration, volume, type) => {
+                    this.playTone(frequency, duration, volume, type)
+                },
+            },
+        )
+        this.createDebugOverlay()
+        this.scene.launch('UI', {
+            gameScene: this,
+            runState: this.runState,
+            player: this.player,
+            moduleSystem: this.moduleSystem,
+            startGame: () => this.runSystem.start(),
+            restartGame: () => this.runSystem.restart(),
         })
 
         if (data.autoStart) {
-            this.startGame()
+            this.runSystem.start()
         }
     }
 
@@ -137,116 +188,64 @@ export class Game extends Scene {
         }
     }
 
-    private createPlayer(x: number, y: number) {
-        const playerWidth = this.config.player.width
-        const playerHeight = this.config.player.height
-
-        const shipPoints = [
-            playerWidth / 2,
-            0,
-            playerWidth,
-            playerHeight,
-            playerWidth / 2,
-            playerHeight * 0.78,
-            0,
-            playerHeight,
-        ]
-
-        const player = this.add.polygon(
-            x,
-            y,
-            shipPoints,
-            this.config.player.color,
-        )
-
-        player.setStrokeStyle(
-            this.config.player.strokeWidth,
-            this.config.player.strokeColor,
-        )
-
-        return player
-    }
-
     update(time: number, delta: number) {
         this.updateStarfield(delta)
+        this.debugOverlay?.update()
 
-        if (!this.hasStarted) {
+        if (!this.runSystem.update(delta)) {
             return
         }
 
-        if (this.isGameOver) {
-            if (this.restartKey.isDown) {
-                this.restartAfterGameOver()
+        this.player.update(time)
+        this.playerController.update(time, delta, (shootTime) => {
+            const didShoot = this.player.shoot(
+                shootTime,
+                this.moduleSystem.getWeaponParameters(this.config.bullet),
+                (projectile) => this.bullets.push(projectile),
+            )
+
+            if (didShoot) {
+                this.playTone(620, 0.035, 0.035, 'square')
             }
+        })
 
-            return
+        if (this.layerSystem.update()) {
+            this.resetLayerObjects(time)
         }
 
-        if (Input.Keyboard.JustDown(this.restartKey)) {
-            this.togglePause()
-        }
-
-        if (this.isPaused) {
-            return
-        }
-
-        const deltaInSeconds = delta / this.config.time.millisecondsPerSecond
-        this.gameplayTime += delta
-        const distance = this.config.player.speed * deltaInSeconds
-
-        if (this.cursors.left.isDown || this.keys.left.isDown) {
-            this.player.x -= distance
-        }
-
-        if (this.cursors.right.isDown || this.keys.right.isDown) {
-            this.player.x += distance
-        }
-
-        const halfPlayerWidth = this.player.width / 2
-
-        this.player.x = PhaserMath.Clamp(
-            this.player.x,
-            halfPlayerWidth,
-            this.scale.width - halfPlayerWidth,
+        const missionResult = this.missionProgress.update(
+            delta,
+            this.layerSystem.getCurrentLayer().missionProgressPerSecond,
         )
 
-        if (
-            this.keys.shoot.isDown &&
-            time - this.lastShotTime > this.getCurrentFireRate()
-        ) {
-            this.shoot()
-            this.lastShotTime = time
+        if (missionResult) {
+            this.runSystem.finish(
+                missionResult,
+                missionResult === 'victory'
+                    ? 'mission-complete'
+                    : 'mission-failed',
+            )
+
+            return
         }
 
         this.updateBullets(delta)
 
-        if (
-            this.gameplayTime - this.lastEnemySpawnTime >
-            this.getCurrentEnemySpawnRate()
-        ) {
-            this.spawnEnemy()
-            this.lastEnemySpawnTime = this.gameplayTime
-        }
+        this.enemySpawner.update(
+            this.layerSystem.getCurrentLayer().enemySpawnIntervalMultiplier,
+            this.layerSystem.getCurrentLayer().enemyTypeWeights,
+        )
 
         this.updateEnemies(delta)
-        this.updateEnemyAttacks()
         this.updateEnemyBullets(delta)
 
-        if (time - this.lastModuleSpawnTime > this.config.module.spawnRate) {
-            this.trySpawnModule()
-            this.lastModuleSpawnTime = time
-        }
+        this.moduleSpawner.update(time)
 
         this.updateModulePickups(delta)
         this.checkModulePlayerCollisions()
-        this.updateActiveModules(delta)
+        this.moduleSystem.update(delta)
         this.updateShieldVisual()
-        this.updatePlayerInvulnerability(time)
-
-        this.checkBulletEnemyCollisions()
-
-        this.checkEnemyBulletPlayerCollisions(time)
-        this.checkEnemyPlayerCollisions(time)
+        this.combatSystem.update(time)
     }
 
     private updateStarfield(delta: number) {
@@ -264,72 +263,14 @@ export class Game extends Scene {
         })
     }
 
-    private shoot() {
-        this.playTone(620, 0.035, 0.035, 'square')
-
-        this.getBulletAngles().forEach((angle) => {
-            this.createBullet(angle)
-        })
-    }
-
-    private createBullet(angle: number) {
-        const angleInRadians = PhaserMath.DegToRad(angle)
-
-        const bullet = this.add.rectangle(
-            this.player.x,
-            this.player.y - this.config.bullet.yOffset,
-            this.config.bullet.width,
-            this.config.bullet.height,
-            this.config.bullet.color,
-        )
-
-        this.bullets.push({
-            object: bullet,
-            velocityX: Math.cos(angleInRadians) * this.config.bullet.speed,
-            velocityY: Math.sin(angleInRadians) * this.config.bullet.speed,
-            damage: this.config.bullet.damage,
-        })
-    }
-
-    private getBulletAngles() {
-        const spreadShot = this.config.module.effects.spreadShot
-
-        if (!this.hasActiveModule(spreadShot.type)) {
-            return [-90]
-        }
-
-        const angleStep = spreadShot.fanAngle / (spreadShot.bulletCount - 1)
-        const startAngle = -90 - spreadShot.fanAngle / 2
-
-        return Array.from({ length: spreadShot.bulletCount }, (_value, index) => {
-            return startAngle + index * angleStep
-        })
-    }
-
-    private getCurrentFireRate() {
-        const rapidFire = this.config.module.effects.rapidFire
-
-        if (this.hasActiveModule(rapidFire.type)) {
-            return this.config.bullet.fireRate * rapidFire.fireRateMultiplier
-        }
-
-        return this.config.bullet.fireRate
-    }
-
-    private hasActiveModule(type: string) {
-        return this.activeModules.some((module) => {
-            return module.type === type
-        })
-    }
-
     private hasShieldModule() {
-        return this.hasActiveModule(this.config.module.effects.shield.type)
+        return this.moduleSystem.hasActive(this.config.module.effects.shield.type)
     }
 
     private createShieldVisual() {
         const shield = this.add.circle(
-            this.player.x,
-            this.player.y,
+            this.player.object.x,
+            this.player.object.y,
             this.config.module.effects.shield.radius,
         )
 
@@ -344,373 +285,48 @@ export class Game extends Scene {
     }
 
     private updateShieldVisual() {
-        this.shieldVisual.setPosition(this.player.x, this.player.y)
+        this.shieldVisual.setPosition(this.player.object.x, this.player.object.y)
         this.shieldVisual.setVisible(this.hasShieldModule())
     }
 
     private updateBullets(delta: number) {
-        const deltaInSeconds = delta / this.config.time.millisecondsPerSecond
-
         this.bullets.forEach((bullet) => {
-            bullet.object.x += bullet.velocityX * deltaInSeconds
-            bullet.object.y += bullet.velocityY * deltaInSeconds
+            bullet.update(delta)
         })
 
-        this.bullets = this.bullets.filter((bullet) => {
-            if (
-                bullet.object.y < this.config.bullet.destroyY ||
-                bullet.object.x < -bullet.object.width ||
-                bullet.object.x > this.scale.width + bullet.object.width
-            ) {
-                bullet.object.destroy()
-
-                return false
-            }
-
-            return true
-        })
-    }
-
-    private spawnEnemy() {
-        const carriesModule = (
-            PhaserMath.Between(1, 100) <= this.config.enemy.carrierSpawnChance
-        )
-        const enemyType = this.getEnemyType(carriesModule)
-        const enemyConfig = this.config.enemy.types[enemyType]
-        const enemyWidth = enemyConfig.width
-        const enemyHeight = enemyConfig.height
-        const minSpawnX = Math.max(
-            enemyWidth / 2,
-            this.config.player.width / 2,
-        )
-        const maxSpawnX = Math.min(
-            this.scale.width - enemyWidth / 2,
-            this.scale.width - this.config.player.width / 2,
-        )
-
-        const x = PhaserMath.Between(
-            minSpawnX,
-            maxSpawnX,
-        )
-
-        const enemy = this.createEnemy(x, -enemyHeight, enemyType, carriesModule)
-
-        this.enemies.push(enemy)
-    }
-
-    private createEnemy(
-        x: number,
-        y: number,
-        type: EnemyType,
-        carriesModule: boolean,
-    ) {
-        const enemyConfig = this.config.enemy.types[type]
-        const enemyWidth = enemyConfig.width
-        const enemyHeight = enemyConfig.height
-        const maxHitPoints = enemyConfig.hitPoints
-        const enemyAttack = 'attack' in enemyConfig
-            ? enemyConfig.attack
-            : undefined
-
-        const enemyPoints = [
-            0,
-            0,
-            enemyWidth,
-            0,
-            enemyWidth * 0.82,
-            enemyHeight,
-            enemyWidth * 0.5,
-            enemyHeight * 0.68,
-            enemyWidth * 0.18,
-            enemyHeight,
-        ]
-
-        const enemy = this.add.polygon(
-            x,
-            y,
-            enemyPoints,
-            enemyConfig.color,
-        )
-
-        enemy.setStrokeStyle(
-            this.config.enemy.strokeWidth,
-            this.config.enemy.strokeColor,
-        )
-
-        const createdEnemy: Enemy = {
-            body: enemy,
-            type,
-            movement: enemyConfig.movement,
-            attack: enemyAttack,
-            lastAttackTime: enemyAttack
-                ? -enemyAttack.cooldown
-                : 0,
-            spawnX: x,
-            age: 0,
-            carriesModule,
-            speed: enemyConfig.speed,
-            scoreReward: enemyConfig.scoreReward,
-            hitPoints: maxHitPoints,
-            maxHitPoints,
-        }
-
-        if (maxHitPoints > 1) {
-            const healthBarY = y - enemyHeight / 2 - this.config.enemy.healthBarOffsetY
-            const healthBarX = x - this.config.enemy.healthBarWidth / 2
-
-            createdEnemy.healthBarBackground = this.add.rectangle(
-                x,
-                healthBarY,
-                this.config.enemy.healthBarWidth,
-                this.config.enemy.healthBarHeight,
-                this.config.enemy.healthBarBackgroundColor,
-            )
-
-            createdEnemy.healthBarFill = this.add.rectangle(
-                healthBarX,
-                healthBarY,
-                this.config.enemy.healthBarWidth,
-                this.config.enemy.healthBarHeight,
-                this.config.enemy.healthBarColor,
-            ).setOrigin(0, 0.5)
-        }
-
-        if (!carriesModule) {
-            return createdEnemy
-        }
-
-        const label = this.add.text(
-            x,
-            y + enemyHeight * 0.38,
-            this.config.enemy.types.carrier.label,
-            {
-                fontFamily: 'Arial',
-                fontSize: '16px',
-                color: '#ffffff',
-            },
-        ).setOrigin(0.5)
-
-        createdEnemy.label = label
-
-        return createdEnemy
-    }
-
-    private getEnemyType(carriesModule: boolean): EnemyType {
-        if (carriesModule) {
-            return 'carrier'
-        }
-
-        const roll = PhaserMath.Between(1, 100)
-
-        if (roll <= this.config.enemy.heavySpawnChance) {
-            return 'heavy'
-        }
-
-        if (
-            roll <=
-            this.config.enemy.heavySpawnChance + this.config.enemy.sturdySpawnChance
-        ) {
-            return 'sturdy'
-        }
-
-        return 'basic'
+        this.bullets = this.cleanupSystem.cleanupPlayerProjectiles(this.bullets)
     }
 
     private updateEnemies(delta: number) {
-        const deltaInSeconds = delta / this.config.time.millisecondsPerSecond
-        const speedTimeMultiplier = this.getEnemySpeedTimeMultiplier()
+        const speedTimeMultiplier = this.enemySpawner.getEnemySpeedMultiplier()
 
         this.enemies.forEach((enemy) => {
-            const distance = enemy.speed * speedTimeMultiplier * deltaInSeconds
-
-            enemy.age += delta
-            updateEnemyMovement(enemy, distance)
-
-            if (enemy.label) {
-                enemy.label.setPosition(enemy.body.x, enemy.label.y + distance)
-            }
-
-            this.updateEnemyHealthBarPosition(enemy)
+            enemy.update(delta, speedTimeMultiplier, this.enemyBullets)
         })
 
-        this.enemies = this.enemies.filter((enemy) => {
-            if (enemy.body.y > this.scale.height + enemy.body.height) {
-                this.destroyEnemy(enemy)
-
-                return false
-            }
-
-            return true
-        })
-    }
-
-    private destroyEnemy(enemy: Enemy) {
-        enemy.body.destroy()
-        enemy.label?.destroy()
-        enemy.healthBarBackground?.destroy()
-        enemy.healthBarFill?.destroy()
-    }
-
-    private updateEnemyAttacks() {
-        this.enemies.forEach((enemy) => {
-            updateEnemyAttack(this, enemy, this.enemyBullets)
-        })
+        this.enemies = this.cleanupSystem.cleanupEnemies(this.enemies)
     }
 
     private updateEnemyBullets(delta: number) {
-        const deltaInSeconds = delta / this.config.time.millisecondsPerSecond
-        const speedTimeMultiplier = this.getEnemySpeedTimeMultiplier()
+        const speedTimeMultiplier = this.enemySpawner.getEnemySpeedMultiplier()
 
         this.enemyBullets.forEach((bullet) => {
-            bullet.object.y += bullet.speed * speedTimeMultiplier * deltaInSeconds
+            bullet.update(delta, speedTimeMultiplier)
         })
 
-        this.enemyBullets = this.enemyBullets.filter((bullet) => {
-            if (bullet.object.y > this.scale.height + bullet.object.height) {
-                bullet.object.destroy()
-
-                return false
-            }
-
-            return true
-        })
-    }
-
-    private updateEnemyHealthBarPosition(enemy: Enemy) {
-        if (!enemy.healthBarBackground || !enemy.healthBarFill) {
-            return
-        }
-
-        const y = enemy.body.y - enemy.body.height / 2 - this.config.enemy.healthBarOffsetY
-
-        enemy.healthBarBackground.setPosition(enemy.body.x, y)
-        enemy.healthBarFill.setPosition(
-            enemy.body.x - this.config.enemy.healthBarWidth / 2,
-            y,
+        this.enemyBullets = this.cleanupSystem.cleanupEnemyProjectiles(
+            this.enemyBullets,
         )
-    }
-
-    private updateEnemyHealthBar(enemy: Enemy) {
-        if (!enemy.healthBarFill) {
-            return
-        }
-
-        const healthRatio = PhaserMath.Clamp(
-            enemy.hitPoints / enemy.maxHitPoints,
-            0,
-            1,
-        )
-
-        enemy.healthBarFill.setDisplaySize(
-            this.config.enemy.healthBarWidth * healthRatio,
-            this.config.enemy.healthBarHeight,
-        )
-    }
-
-    private getEnemySpeedTimeMultiplier() {
-        const gameplaySeconds = this.gameplayTime / this.config.time.millisecondsPerSecond
-
-        return (
-            1 +
-            gameplaySeconds * this.config.enemy.speedTimeMultiplierIncreasePerSecond
-        )
-    }
-
-    private getCurrentEnemySpawnRate() {
-        const gameplaySeconds = this.gameplayTime / this.config.time.millisecondsPerSecond
-        const scaledSpawnRate = (
-            this.config.enemy.spawnRate -
-            gameplaySeconds * this.config.enemy.spawnRateDecreasePerSecond
-        )
-
-        return PhaserMath.Clamp(
-            scaledSpawnRate,
-            this.config.enemy.minSpawnRate,
-            this.config.enemy.spawnRate,
-        )
-    }
-
-    private trySpawnModule() {
-        const shouldSpawn = (
-            PhaserMath.Between(1, 100) <= this.config.module.spawnChance
-        )
-
-        if (!shouldSpawn) {
-            return
-        }
-
-        this.spawnModule()
-    }
-
-    private spawnModule() {
-        const moduleWidth = this.config.module.width
-        const x = PhaserMath.Between(
-            moduleWidth / 2,
-            this.scale.width - moduleWidth / 2,
-        )
-
-        this.createModulePickup(x, -this.config.module.height)
-    }
-
-    private dropModule(x: number, y: number) {
-        this.createModulePickup(x, y)
-    }
-
-    private createModulePickup(x: number, y: number) {
-        const moduleWidth = this.config.module.width
-        const clampedX = PhaserMath.Clamp(
-            x,
-            moduleWidth / 2,
-            this.scale.width - moduleWidth / 2,
-        )
-        const label = this.config.module.labels[
-            PhaserMath.Between(0, this.config.module.labels.length - 1)
-        ]
-
-        const body = this.add.rectangle(
-            clampedX,
-            y,
-            this.config.module.width,
-            this.config.module.height,
-            this.config.module.color,
-        )
-
-        body.setStrokeStyle(
-            this.config.module.strokeWidth,
-            this.config.module.strokeColor,
-        )
-
-        const text = this.add.text(clampedX, body.y, label, {
-            fontFamily: 'Arial',
-            fontSize: '16px',
-            color: '#111827',
-        }).setOrigin(0.5)
-
-        this.modulePickups.push({
-            body,
-            label: text,
-            type: label,
-        })
     }
 
     private updateModulePickups(delta: number) {
-        const deltaInSeconds = delta / this.config.time.millisecondsPerSecond
-        const distance = this.config.module.speed * deltaInSeconds
-
         this.modulePickups.forEach((module) => {
-            module.body.y += distance
-            module.label.y = module.body.y
+            module.update(delta)
         })
 
-        this.modulePickups = this.modulePickups.filter((module) => {
-            if (module.body.y > this.scale.height + module.body.height) {
-                this.destroyModulePickup(module)
-
-                return false
-            }
-
-            return true
-        })
+        this.modulePickups = this.cleanupSystem.cleanupModulePickups(
+            this.modulePickups,
+        )
     }
 
     private checkModulePlayerCollisions() {
@@ -721,15 +337,14 @@ export class Game extends Scene {
 
             const isCollected = Geom.Intersects.RectangleToRectangle(
                 module.body.getBounds(),
-                this.player.getBounds(),
+                this.player.object.getBounds(),
             )
 
             if (!isCollected) {
                 return
             }
 
-            this.collectModule(module)
-            this.destroyModulePickup(module)
+            module.collect((type) => this.moduleSystem.collect(type))
         })
 
         this.modulePickups = this.modulePickups.filter((module) => {
@@ -737,392 +352,188 @@ export class Game extends Scene {
         })
     }
 
-    private collectModule(module: ModulePickup) {
-        this.playTone(880, 0.08, 0.06)
-
-        const moduleEffect = this.getModuleEffect(module.type)
-
-        if (!moduleEffect) {
-            return
-        }
-
-        if (moduleEffect.kind === ModuleKind.Instant) {
-            this.applyInstantModule(moduleEffect)
-
-            return
-        }
-
-        const duplicate = this.activeModules.find((activeModule) => {
-            return activeModule.type === module.type
-        })
-
-        if (duplicate) {
-            if (duplicate.kind === ModuleKind.Temporary) {
-                duplicate.remainingMs = this.config.module.duration
-            }
-
-            this.updateModuleHud()
-
-            return
-        }
-
-        const activeModule = {
-            type: module.type,
-            label: module.type,
-            kind: moduleEffect.kind,
-            remainingMs: moduleEffect.kind === ModuleKind.Temporary
-                ? this.config.module.duration
-                : undefined,
-            order: this.nextModuleOrder,
-        }
-
-        this.nextModuleOrder += 1
-
-        if (this.activeModules.length < this.config.module.slotCount) {
-            this.activeModules.push(activeModule)
-            this.updateModuleHud()
-
-            return
-        }
-
-        const oldestModule = this.activeModules.reduce((oldest, current) => {
-            return current.order < oldest.order ? current : oldest
-        })
-
-        const oldestIndex = this.activeModules.indexOf(oldestModule)
-        this.activeModules[oldestIndex] = activeModule
-        this.updateModuleHud()
-    }
-
-    private updateActiveModules(delta: number) {
-        this.activeModules.forEach((module) => {
-            if (module.kind !== ModuleKind.Temporary) {
-                return
-            }
-
-            if (module.remainingMs === undefined) {
-                return
-            }
-
-            module.remainingMs -= delta
-        })
-
-        const activeModuleCount = this.activeModules.length
-
-        this.activeModules = this.activeModules.filter((module) => {
-            if (module.kind !== ModuleKind.Temporary) {
-                return true
-            }
-
-            return (module.remainingMs ?? 0) > 0
-        })
-
-        if (this.activeModules.length !== activeModuleCount) {
-            this.updateModuleHud()
-
-            return
-        }
-
-        if (this.activeModules.length > 0) {
-            this.updateModuleHud()
-        }
-    }
-
-    private updateModuleHud() {
-        updateModuleSlotTexts(this.hud, this.activeModules)
-    }
-
-    private getModuleEffect(type: string) {
-        return Object.values(this.config.module.effects).find((effect) => {
-            return effect.type === type
-        })
-    }
-
-    private applyInstantModule(
-        moduleEffect: ReturnType<Game['getModuleEffect']>,
-    ) {
-        if (!moduleEffect || moduleEffect.kind !== ModuleKind.Instant) {
-            return
-        }
-
-        if (moduleEffect.type === this.config.module.effects.heal.type) {
-            this.healPlayer(moduleEffect.amount)
-
-            return
-        }
-
-        if (moduleEffect.type === this.config.module.effects.resetTimers.type) {
-            this.refreshTemporaryModuleTimers()
-        }
-    }
-
-    private healPlayer(amount: number) {
-        this.health = PhaserMath.Clamp(
-            this.health + amount,
-            0,
-            this.config.player.maxHealth,
-        )
-
-        updateHealthBar(this.hud, this.health, this.config.player.maxHealth)
-    }
-
-    private refreshTemporaryModuleTimers() {
-        this.activeModules.forEach((module) => {
-            if (module.kind !== ModuleKind.Temporary) {
-                return
-            }
-
-            module.remainingMs = this.config.module.duration
-        })
-
-        this.updateModuleHud()
-    }
-
-    private destroyModulePickup(module: ModulePickup) {
-        module.body.destroy()
-        module.label.destroy()
-    }
-
-    private checkBulletEnemyCollisions() {
-        this.bullets.forEach((bullet) => {
-            this.enemies.forEach((enemy) => {
-                if (!bullet.object.active || !enemy.body.active) {
-                    return
-                }
-
-                const isHit = Geom.Intersects.RectangleToRectangle(
-                    bullet.object.getBounds(),
-                    enemy.body.getBounds(),
-                )
-
-                if (!isHit) {
-                    return
-                }
-
-                this.createHitEffect(bullet.object.x, bullet.object.y)
-                this.playTone(220, 0.06, 0.05, 'sawtooth')
-
-                bullet.object.destroy()
-                this.damageEnemy(enemy, bullet.damage)
-            })
-        })
-
-        this.bullets = this.bullets.filter((bullet) => bullet.object.active)
-        this.enemies = this.enemies.filter((enemy) => enemy.body.active)
-    }
-
-    private damageEnemy(enemy: Enemy, damage: number) {
-        enemy.hitPoints -= damage
-
-        if (enemy.hitPoints > 0) {
-            this.updateEnemyHealthBar(enemy)
-
-            return
-        }
-
-        if (enemy.carriesModule) {
-            this.dropModule(enemy.body.x, enemy.body.y)
-        }
-
-        this.destroyEnemy(enemy)
-
-        this.score += enemy.scoreReward
-        updateScoreText(this.hud, this.score)
-    }
-
-    private createHitEffect(x: number, y: number) {
-        const effect = this.add.circle(x, y, 10, 0xffffff, 0.85)
-
-        effect.setStrokeStyle(2, this.config.bullet.color)
-
-        this.tweens.add({
-            targets: effect,
-            alpha: 0,
-            scale: 1.8,
-            duration: 120,
-            onComplete: () => {
-                effect.destroy()
-            },
-        })
-    }
-
-    private checkEnemyPlayerCollisions(time: number) {
-        if (this.isInvulnerable) {
-            return
-        }
-
-        this.enemies.forEach((enemy) => {
-            if (!enemy.body.active || this.isGameOver) {
-                return
-            }
-
-            const isHit = Geom.Intersects.RectangleToRectangle(
-                enemy.body.getBounds(),
-                this.player.getBounds(),
-            )
-
-            if (!isHit) {
-                return
-            }
-
-            this.destroyEnemy(enemy)
-
-            if (this.hasShieldModule()) {
-                this.createHitEffect(enemy.body.x, enemy.body.y)
-
-                return
-            }
-
-            this.takeDamage(time)
-        })
-
-        this.enemies = this.enemies.filter((enemy) => enemy.body.active)
-    }
-
-    private checkEnemyBulletPlayerCollisions(time: number) {
-        if (this.isInvulnerable) {
-            return
-        }
-
-        this.enemyBullets.forEach((bullet) => {
-            if (!bullet.object.active || this.isGameOver || this.isInvulnerable) {
-                return
-            }
-
-            const isHit = Geom.Intersects.RectangleToRectangle(
-                bullet.object.getBounds(),
-                this.player.getBounds(),
-            )
-
-            if (!isHit) {
-                return
-            }
-
-            const hitX = bullet.object.x
-            const hitY = bullet.object.y
-
-            bullet.object.destroy()
-
-            if (this.hasShieldModule()) {
-                this.createHitEffect(hitX, hitY)
-
-                return
-            }
-
-            this.takeDamage(time, bullet.damage)
-        })
-
-        this.enemyBullets = this.enemyBullets.filter((bullet) => {
-            return bullet.object.active
-        })
-    }
-
-    private updatePlayerInvulnerability(time: number) {
-        if (!this.isInvulnerable) {
-            return
-        }
-
-        if (time >= this.invulnerableUntil) {
-            this.isInvulnerable = false
-            this.player.setAlpha(this.config.player.defaultAlpha)
-
-            return
-        }
-
-        const blinkStep = Math.floor(
-            time / this.config.player.invulnerableBlinkInterval,
-        )
-
-        this.player.setAlpha(
-            blinkStep % 2 === 0
-                ? this.config.player.defaultAlpha
-                : this.config.player.invulnerableAlpha,
-        )
-    }
-
-    private finishGame() {
-        this.isGameOver = true
-        setGameOverVisible(this.hud, true, this.score)
-        this.playTone(120, 0.35, 0.08, 'sawtooth')
-    }
-
-    private startGame() {
-        this.hasStarted = true
-        setStartVisible(this.hud, false)
-    }
-
-    private restartAfterGameOver() {
-        this.scene.restart({ autoStart: true })
-    }
-
     private resetGameState() {
-        this.hasStarted = false
-        this.isGameOver = false
-        this.isPaused = false
-        this.isInvulnerable = false
-
-        this.score = this.config.score.initial
-        this.health = this.config.player.maxHealth
-
-        this.lastShotTime = 0
-        this.lastEnemySpawnTime = 0
-        this.lastModuleSpawnTime = 0
-        this.gameplayTime = 0
-        this.invulnerableUntil = 0
-        this.nextModuleOrder = 0
+        this.runState = new RunState(
+            this.config.score.initial,
+            this.config.missionProgress.initial,
+            this.config.missionProgress.min,
+            this.config.missionProgress.max,
+        )
 
         this.bullets = []
         this.enemies = []
         this.enemyBullets = []
         this.modulePickups = []
-        this.activeModules = []
     }
 
-    private togglePause() {
-        this.isPaused = !this.isPaused
-        setPauseVisible(this.hud, this.isPaused)
+    private resetLayerObjects(time: number) {
+        this.enemies.forEach((enemy) => enemy.destroy())
+        this.bullets.forEach((bullet) => bullet.destroy())
+        this.enemyBullets.forEach((bullet) => bullet.destroy())
+        this.modulePickups.forEach((module) => module.destroy())
+
+        this.enemies = []
+        this.bullets = []
+        this.enemyBullets = []
+        this.modulePickups = []
+
+        this.enemySpawner.reset()
+        this.moduleSpawner.reset(time)
     }
 
-    private takeDamage(
-        time: number,
-        damage: number = this.config.player.damagePerHit,
-    ) {
-        this.health -= damage
-        updateHealthBar(this.hud, this.health, this.config.player.maxHealth)
-        this.createPlayerDamageEffect()
-        this.playTone(150, 0.12, 0.08, 'square')
-
-        if (this.health <= 0) {
-            this.finishGame()
-
+    private createDebugOverlay() {
+        if (!DEBUG_OVERLAY_ENABLED) {
             return
         }
 
-        this.isInvulnerable = true
-        this.invulnerableUntil = time + this.config.player.invulnerabilityDuration
-        this.player.setAlpha(this.config.player.invulnerableAlpha)
+        this.debugOverlay = new DebugOverlay(this, {
+            getLayerName: () => this.layerSystem.getCurrentLayer().name,
+            getRunNumber: () => this.runNumber,
+            getActiveGameObjectCount: () => this.getActiveGameObjectCount(),
+            getActiveTimerCount: () => this.getActiveTimerCount(),
+            getActiveTweenCount: () => this.tweens.getTweens().length,
+            getEventHandlerCount: () => this.getEventHandlerCount(),
+            getHealth: () => this.player.getHealth(),
+            getLastDamage: () => this.player.getLastDamage(),
+            getRunEndReason: () => this.runState.getEndReason(),
+            getRunStatus: () => this.runState.getStatus(),
+            isPlayerInvulnerable: () => this.player.isInvulnerable(),
+            getRemainingInvulnerabilityTime: () => {
+                return this.player.getRemainingInvulnerabilityTime(this.time.now)
+            },
+            getRunTime: () => this.runState.getGameplayTime(),
+            getMissionProgress: () => this.runState.getMissionProgress(),
+            getMissionProgressSpeed: () => {
+                return this.layerSystem.getCurrentLayer()
+                    .missionProgressPerSecond
+            },
+            getEnemySpawnIntervalMultiplier: () => {
+                return this.layerSystem.getCurrentLayer()
+                    .enemySpawnIntervalMultiplier
+            },
+            getBaseEnemySpawnInterval: () => {
+                return this.enemySpawner.getBaseSpawnInterval()
+            },
+            getEnemySpawnInterval: () => {
+                return this.enemySpawner.getSpawnInterval(
+                    this.layerSystem.getCurrentLayer()
+                        .enemySpawnIntervalMultiplier,
+                )
+            },
+            getEnemySpeedMultiplier: () => {
+                return this.enemySpawner.getEnemySpeedMultiplier()
+            },
+            getScoreRewardMultiplier: () => {
+                return this.layerSystem.getCurrentLayer()
+                    .scoreRewardMultiplier
+            },
+            getLastBaseScoreReward: () => {
+                return this.runState.getLastBaseScoreReward()
+            },
+            getLastFinalScoreReward: () => {
+                return this.runState.getLastFinalScoreReward()
+            },
+            getEnemyTypeWeights: () => {
+                return this.layerSystem.getCurrentLayer().enemyTypeWeights
+            },
+            getTimeUntilNextModuleSpawn: () => {
+                return this.moduleSpawner.getTimeUntilNextSpawn(this.time.now)
+            },
+            getActiveModuleCount: () => {
+                return this.moduleSystem.getActiveModules().length
+            },
+            getModulePickupCount: () => {
+                return this.modulePickups.filter((pickup) => pickup.body.active)
+                    .length
+            },
+            getCurrentFireRate: () => {
+                return this.moduleSystem.getWeaponParameters(this.config.bullet)
+                    .fireRate
+            },
+            getProjectilesPerShot: () => {
+                return this.moduleSystem.getWeaponParameters(this.config.bullet)
+                    .bulletAngles.length
+            },
+            getActiveModifiers: () => {
+                return this.moduleSystem.getActiveModules()
+                    .map((module) => module.label)
+            },
+            getEnemyCount: () => {
+                return this.enemies.filter((enemy) => enemy.body.active).length
+            },
+            getShootingEnemyCount: () => {
+                return this.enemies.filter((enemy) => {
+                    return enemy.body.active && enemy.attack !== undefined
+                }).length
+            },
+            getPlayerProjectileCount: () => {
+                return this.bullets.filter((bullet) => bullet.object.active)
+                    .length
+            },
+            getEnemyProjectileCount: () => {
+                return this.enemyBullets.filter((bullet) => bullet.object.active)
+                    .length
+            },
+            getActiveModules: () => this.moduleSystem.getActiveModules(),
+        })
     }
 
-    private createPlayerDamageEffect() {
-        const effect = this.add.circle(
-            this.player.x,
-            this.player.y,
-            16,
-            0xffffff,
-            0.85,
-        )
+    private getActiveTimerCount() {
+        const clock = this.time as typeof this.time & {
+            _active: unknown[]
+            _pendingInsertion: unknown[]
+        }
 
-        effect.setStrokeStyle(3, this.config.enemy.types.basic.color)
+        return clock._active.length + clock._pendingInsertion.length
+    }
 
-        this.tweens.add({
-            targets: effect,
-            alpha: 0,
-            scale: 2.2,
-            duration: 160,
-            onComplete: () => {
-                effect.destroy()
-            },
-        })
+    private getActiveGameObjectCount() {
+        const gameObjectCount = this.children.list.filter((gameObject) => {
+            return gameObject.active
+        }).length
+
+        if (!this.scene.isActive('UI')) {
+            return gameObjectCount
+        }
+
+        const uiScene = this.scene.get('UI') as UIScene
+
+        return gameObjectCount + uiScene.getActiveGameObjectCount()
+    }
+
+    private getEventHandlerCount() {
+        const gameHandlerCount = countEventListeners(this.events) +
+            countEventListeners(this.input) +
+            countEventListeners(this.input.keyboard)
+
+        if (!this.scene.isActive('UI')) {
+            return gameHandlerCount
+        }
+
+        const uiScene = this.scene.get('UI') as UIScene
+
+        return gameHandlerCount + uiScene.getEventHandlerCount()
+    }
+
+    private cleanupRun() {
+        this.enemies.forEach((enemy) => enemy.destroy())
+        this.bullets.forEach((bullet) => bullet.destroy())
+        this.enemyBullets.forEach((bullet) => bullet.destroy())
+        this.modulePickups.forEach((module) => module.destroy())
+        this.stars.forEach((star) => star.object.destroy())
+        this.player.object.destroy()
+        this.shieldVisual.destroy()
+
+        this.enemies = []
+        this.bullets = []
+        this.enemyBullets = []
+        this.modulePickups = []
+        this.stars = []
+        this.debugOverlay = undefined
+
+        this.time.removeAllEvents()
+        this.tweens.killAll()
+        this.input.keyboard?.removeAllKeys(true)
     }
 
     private playTone(
@@ -1148,6 +559,10 @@ export class Game extends Scene {
 
         oscillator.connect(gain)
         gain.connect(audioContext.destination)
+        oscillator.addEventListener('ended', () => {
+            oscillator.disconnect()
+            gain.disconnect()
+        }, { once: true })
 
         oscillator.start(now)
         oscillator.stop(now + duration)
