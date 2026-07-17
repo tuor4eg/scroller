@@ -1,14 +1,12 @@
 import { Math as PhaserMath } from 'phaser'
-import type { GameConfig } from '../config'
 import type { RunResult, RunState } from '../state/RunState'
-
-type MissionProgressConfig = GameConfig['missionProgress']
+import type { MissionConfig } from '../types/mission'
 
 export class MissionProgress {
-    private readonly config: MissionProgressConfig
+    private readonly config: MissionConfig
     private readonly runState: RunState
 
-    constructor(config: MissionProgressConfig, runState: RunState) {
+    constructor(config: MissionConfig, runState: RunState) {
         this.config = config
         this.runState = runState
     }
@@ -17,17 +15,17 @@ export class MissionProgress {
         const progressDelta = progressPerSecond * delta / 1000
         const progress = PhaserMath.Clamp(
             this.runState.getMissionProgress() + progressDelta,
-            this.config.min,
-            this.config.max,
+            this.config.defeatConditions.missionProgressAtMost,
+            this.config.victoryConditions.missionProgressAtLeast,
         )
 
         this.runState.setMissionProgress(progress)
 
-        if (progress <= this.config.min) {
+        if (progress <= this.config.defeatConditions.missionProgressAtMost) {
             return 'defeat'
         }
 
-        if (progress >= this.config.max) {
+        if (progress >= this.config.victoryConditions.missionProgressAtLeast) {
             return 'victory'
         }
 

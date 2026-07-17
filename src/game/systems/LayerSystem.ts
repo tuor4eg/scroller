@@ -1,7 +1,7 @@
 import { Input, Scene, Types } from 'phaser'
-import type { GameConfig } from '../config'
+import type { MissionConfig } from '../types/mission'
 
-type LayerConfig = GameConfig['layers']
+type LayerConfig = MissionConfig['layers']
 
 export class LayerSystem {
     private readonly config: LayerConfig

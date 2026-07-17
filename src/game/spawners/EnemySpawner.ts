@@ -3,15 +3,15 @@ import type { GameConfig } from '../config'
 import type { EnemyType } from '../config/enemyConfig'
 import { Enemy } from '../entities/Enemy'
 import type { RunState } from '../state/RunState'
+import type { MissionConfig, MissionLayerConfig } from '../types/mission'
 
-type EnemyTypeWeights = (
-    GameConfig['layers']['items'][number]['enemyTypeWeights']
-)
+type EnemyTypeWeights = MissionLayerConfig['enemyTypeWeights']
 
 export class EnemySpawner {
     private readonly scene: Scene
     private readonly config: GameConfig
     private readonly runState: RunState
+    private readonly missionConfig: MissionConfig
     private readonly addEnemy: (enemy: Enemy) => void
     private lastSpawnTime = 0
 
@@ -19,11 +19,13 @@ export class EnemySpawner {
         scene: Scene,
         config: GameConfig,
         runState: RunState,
+        missionConfig: MissionConfig,
         addEnemy: (enemy: Enemy) => void,
     ) {
         this.scene = scene
         this.config = config
         this.runState = runState
+        this.missionConfig = missionConfig
         this.addEnemy = addEnemy
     }
 
@@ -54,14 +56,15 @@ export class EnemySpawner {
             this.config.time.millisecondsPerSecond
         )
         const scaledSpawnInterval = (
-            this.config.enemy.spawnRate -
-            gameplaySeconds * this.config.enemy.spawnRateDecreasePerSecond
+            this.missionConfig.difficulty.initialEnemySpawnInterval -
+            gameplaySeconds *
+                this.missionConfig.difficulty.enemySpawnRateDecreasePerSecond
         )
 
         return PhaserMath.Clamp(
             scaledSpawnInterval,
-            this.config.enemy.minSpawnRate,
-            this.config.enemy.spawnRate,
+            this.missionConfig.difficulty.minimumEnemySpawnInterval,
+            this.missionConfig.difficulty.initialEnemySpawnInterval,
         )
     }
 
@@ -76,9 +79,10 @@ export class EnemySpawner {
         )
 
         return (
-            this.config.enemy.initialSpeedTimeMultiplier +
+            this.missionConfig.difficulty.initialEnemySpeedMultiplier +
             gameplaySeconds *
-                this.config.enemy.speedTimeMultiplierIncreasePerSecond
+                this.missionConfig.difficulty
+                    .enemySpeedMultiplierIncreasePerSecond
         )
     }
 

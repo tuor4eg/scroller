@@ -1,5 +1,6 @@
 import { GameObjects, Geom, Math as PhaserMath, Scene, Scenes } from 'phaser'
 import { GAME_CONFIG, type GameConfig } from '../config'
+import { PROTOTYPE_MISSION } from '../config/missionConfig'
 import { PlayerController } from '../controllers/PlayerController'
 import { Enemy } from '../entities/Enemy'
 import { ModulePickup } from '../entities/ModulePickup'
@@ -15,6 +16,7 @@ import { MissionProgress } from '../systems/MissionProgress'
 import { ModuleSystem } from '../systems/ModuleSystem'
 import { RunSystem } from '../systems/RunSystem'
 import type { Star } from '../types/gameplay'
+import type { MissionConfig } from '../types/mission'
 import { DebugOverlay } from '../ui/DebugOverlay'
 import { countEventListeners } from '../helpers/countEventListeners'
 import type { UIScene } from './UIScene'
@@ -25,6 +27,7 @@ const DEBUG_OVERLAY_ENABLED = (
 
 export class Game extends Scene {
     private readonly config: GameConfig = GAME_CONFIG
+    private missionConfig: MissionConfig = PROTOTYPE_MISSION
     private audioContext?: AudioContext
 
     private stars!: Star[]
@@ -56,18 +59,27 @@ export class Game extends Scene {
         super('Game')
     }
 
-    create(data: { autoStart?: boolean } = {}) {
+    create(data: {
+        autoStart?: boolean
+        missionConfig?: MissionConfig
+    } = {}) {
+        this.missionConfig = data.missionConfig ?? PROTOTYPE_MISSION
         this.runNumber += 1
         this.resetGameState()
         this.events.once(Scenes.Events.SHUTDOWN, () => this.cleanupRun())
 
         const { width, height } = this.scale
 
-        this.createStarfield(width, height)
+        if (this.missionConfig.environment.starfieldEnabled) {
+            this.createStarfield(width, height)
+        } else {
+            this.stars = []
+        }
         this.enemySpawner = new EnemySpawner(
             this,
             this.config,
             this.runState,
+            this.missionConfig,
             (enemy) => {
                 this.enemies.push(enemy)
             },
@@ -90,12 +102,17 @@ export class Game extends Scene {
         this.playerController = new PlayerController(this, this.player)
         this.layerSystem = new LayerSystem(
             this,
-            this.config.layers,
+            this.missionConfig.layers,
         )
         this.shieldVisual = this.createShieldVisual()
-        this.runSystem = new RunSystem(this, this.runState, () => {
-            this.playTone(120, 0.35, 0.08, 'sawtooth')
-        })
+        this.runSystem = new RunSystem(
+            this,
+            this.runState,
+            this.missionConfig,
+            () => {
+                this.playTone(120, 0.35, 0.08, 'sawtooth')
+            },
+        )
 
         this.moduleSystem = new ModuleSystem(
             this.config.module,
@@ -105,7 +122,7 @@ export class Game extends Scene {
             },
         )
         this.missionProgress = new MissionProgress(
-            this.config.missionProgress,
+            this.missionConfig,
             this.runState,
         )
         this.cleanupSystem = new CleanupSystem(this, this.config)
@@ -134,7 +151,9 @@ export class Game extends Scene {
                 },
                 dropModule: (x, y) => this.moduleSpawner.drop(x, y),
                 playerDied: () => {
-                    this.runSystem.finish('defeat', 'player-death')
+                    if (this.missionConfig.defeatConditions.playerDeath) {
+                        this.runSystem.finish('defeat', 'player-death')
+                    }
                 },
                 playTone: (frequency, duration, volume, type) => {
                     this.playTone(frequency, duration, volume, type)
@@ -354,10 +373,10 @@ export class Game extends Scene {
 
     private resetGameState() {
         this.runState = new RunState(
-            this.config.score.initial,
-            this.config.missionProgress.initial,
-            this.config.missionProgress.min,
-            this.config.missionProgress.max,
+            this.missionConfig.rewards.initialScore,
+            this.missionConfig.initialProgress,
+            this.missionConfig.defeatConditions.missionProgressAtMost,
+            this.missionConfig.victoryConditions.missionProgressAtLeast,
         )
 
         this.bullets = []

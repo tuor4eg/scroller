@@ -20,11 +20,15 @@ export type Hud = {
     startButtonText: GameObjects.Text
 }
 
-export const createHud = (scene: Scene, config: GameConfig): Hud => {
+export const createHud = (
+    scene: Scene,
+    config: GameConfig,
+    initialScore: number,
+): Hud => {
     const scoreText = scene.add.text(
         scene.scale.width - config.hud.x,
         config.hud.scoreY,
-        formatScore(config.score.initial),
+        formatScore(initialScore),
         {
             fontFamily: config.hud.fontFamily,
             fontSize: config.hud.fontSize,

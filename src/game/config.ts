@@ -61,7 +61,6 @@ export const GAME_CONFIG = {
         damagePerHit: GAMEPLAY_CONFIG.player.damagePerHit,
         invulnerabilityDuration: GAMEPLAY_CONFIG.player.invulnerabilityDuration,
     },
-    layers: GAMEPLAY_CONFIG.layers,
     missionProgress: GAMEPLAY_CONFIG.missionProgress,
     bullet: {
         width: GAMEPLAY_CONFIG.bullet.width,
@@ -75,9 +74,6 @@ export const GAME_CONFIG = {
     },
     enemy: ENEMY_CONFIG,
     module: MODULE_CONFIG,
-    score: {
-        initial: 0,
-    },
     time: {
         millisecondsPerSecond: 1000,
     },

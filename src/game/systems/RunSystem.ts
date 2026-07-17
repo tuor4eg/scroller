@@ -1,16 +1,24 @@
 import { Input, Scene } from 'phaser'
 import type { RunEndReason, RunResult, RunState } from '../state/RunState'
+import type { MissionConfig } from '../types/mission'
 
 export class RunSystem {
     private readonly scene: Scene
     private readonly runState: RunState
     private readonly restartKey: Input.Keyboard.Key
     private readonly onFinish: () => void
+    private readonly missionConfig: MissionConfig
 
-    constructor(scene: Scene, runState: RunState, onFinish: () => void) {
+    constructor(
+        scene: Scene,
+        runState: RunState,
+        missionConfig: MissionConfig,
+        onFinish: () => void,
+    ) {
         this.scene = scene
         this.runState = runState
         this.onFinish = onFinish
+        this.missionConfig = missionConfig
         this.restartKey = scene.input.keyboard!.addKey(
             Input.Keyboard.KeyCodes.ENTER,
         )
@@ -53,6 +61,9 @@ export class RunSystem {
     }
 
     restart() {
-        this.scene.scene.restart({ autoStart: true })
+        this.scene.scene.restart({
+            autoStart: true,
+            missionConfig: this.missionConfig,
+        })
     }
 }

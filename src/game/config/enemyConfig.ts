@@ -8,11 +8,6 @@ export enum EnemyAttackType {
 }
 
 export const ENEMY_CONFIG = {
-    spawnRate: 1000,
-    minSpawnRate: 450,
-    spawnRateDecreasePerSecond: 8,
-    initialSpeedTimeMultiplier: 1,
-    speedTimeMultiplierIncreasePerSecond: 1 / 60,
     carrierSpawnChance: 25,
     strokeWidth: 3,
     strokeColor: 0xffffff,

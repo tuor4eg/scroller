@@ -40,7 +40,11 @@ export class UIScene extends Scene {
         this.runState = data.runState
         this.player = data.player
         this.moduleSystem = data.moduleSystem
-        this.hud = createHud(this, this.config)
+        this.hud = createHud(
+            this,
+            this.config,
+            this.runState.getScore(),
+        )
 
         this.hud.startButton.on('pointerdown', () => {
             if (this.runState.isGameOver()) {
