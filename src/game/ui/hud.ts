@@ -9,6 +9,7 @@ export type Hud = {
     missionProgressBackground: GameObjects.Rectangle
     missionProgressFill: GameObjects.Rectangle
     missionProgressText: GameObjects.Text
+    layerText: GameObjects.Text
     moduleSlotBackgrounds: GameObjects.Rectangle[]
     moduleSlotTexts: GameObjects.Text[]
     pauseText: GameObjects.Text
@@ -25,6 +26,23 @@ export const createHud = (
     config: GameConfig,
     initialScore: number,
 ): Hud => {
+    const topPanel = scene.add.rectangle(
+        8,
+        8,
+        scene.scale.width - 16,
+        46,
+        0x102c3a,
+        0.82,
+    ).setOrigin(0)
+    topPanel.setStrokeStyle(2, 0xd9bb73, 0.8)
+
+    scene.add.text(config.hud.healthBarX, 12, 'HULL', {
+        fontFamily: config.hud.fontFamily,
+        fontSize: '9px',
+        fontStyle: 'bold',
+        color: '#f5df9b',
+    })
+
     const scoreText = scene.add.text(
         scene.scale.width - config.hud.x,
         config.hud.scoreY,
@@ -42,7 +60,7 @@ export const createHud = (
 
     const healthBarBackground = scene.add.rectangle(
         config.hud.healthBarX,
-        config.hud.healthBarY,
+        config.hud.healthBarY + 9,
         config.hud.healthBarWidth,
         config.hud.healthBarHeight,
         config.hud.healthBarBackgroundColor,
@@ -53,7 +71,7 @@ export const createHud = (
 
     const healthBarFill = scene.add.rectangle(
         config.hud.healthBarX,
-        config.hud.healthBarY,
+        config.hud.healthBarY + 9,
         config.hud.healthBarWidth,
         config.hud.healthBarHeight,
         config.hud.healthBarFillColor,
@@ -61,7 +79,7 @@ export const createHud = (
 
     const missionProgressBackground = scene.add.rectangle(
         config.hud.missionProgressX,
-        config.hud.missionProgressY,
+        config.hud.missionProgressY + 9,
         config.hud.missionProgressWidth,
         config.hud.missionProgressHeight,
         config.hud.missionProgressBackgroundColor,
@@ -76,7 +94,7 @@ export const createHud = (
 
     const missionProgressFill = scene.add.rectangle(
         config.hud.missionProgressX,
-        config.hud.missionProgressY,
+        config.hud.missionProgressY + 9,
         config.hud.missionProgressWidth,
         config.hud.missionProgressHeight,
         config.hud.missionProgressFillColor,
@@ -84,15 +102,30 @@ export const createHud = (
 
     const missionProgressText = scene.add.text(
         config.hud.missionProgressX + config.hud.missionProgressWidth / 2,
-        config.hud.missionProgressY + config.hud.missionProgressHeight / 2,
+        config.hud.missionProgressY + 9 + config.hud.missionProgressHeight / 2,
         '',
         {
             fontFamily: config.hud.fontFamily,
-            fontSize: '11px',
+            fontSize: '10px',
             fontStyle: 'bold',
             color: '#ffffff',
         },
     ).setOrigin(0.5)
+
+    const layerText = scene.add.text(
+        scene.scale.width / 2,
+        60,
+        '',
+        {
+            fontFamily: config.hud.fontFamily,
+            fontSize: '12px',
+            fontStyle: 'bold',
+            color: '#fef3c7',
+            backgroundColor: '#17384acc',
+            padding: { x: 10, y: 5 },
+        },
+    ).setOrigin(0.5)
+    layerText.setStroke('#2a4350', 2)
 
     const moduleSlotBackgrounds = []
     const moduleSlotTexts = []
@@ -105,11 +138,11 @@ export const createHud = (
             slotY,
             config.hud.moduleSlotWidth,
             config.hud.moduleSlotHeight,
-            0x111827,
-            0.65,
+            0x17384a,
+            0.8,
         ).setOrigin(0)
 
-        moduleSlotBackground.setStrokeStyle(1, 0xffffff, 0.45)
+        moduleSlotBackground.setStrokeStyle(1, 0xd9bb73, 0.7)
 
         const moduleSlotText = scene.add.text(
             config.hud.moduleSlotsX + config.hud.moduleSlotTextXOffset,
@@ -119,7 +152,7 @@ export const createHud = (
                 fontFamily: config.hud.fontFamily,
                 fontSize: config.hud.moduleFontSize,
                 fontStyle: 'bold',
-                color: '#ffffff',
+                color: '#e0f2fe',
             },
         )
 
@@ -167,23 +200,23 @@ export const createHud = (
     const startTitleText = scene.add.text(
         scene.scale.width / 2,
         scene.scale.height / 2 - 128,
-        'SCROLLER',
+        'SKYBOUND',
         {
             fontFamily: config.hud.fontFamily,
             fontSize: '38px',
             fontStyle: 'bold',
-            color: '#ffffff',
+            color: '#fef3c7',
             align: 'center',
         },
     ).setOrigin(0.5)
 
-    startTitleText.setStroke('#1d4ed8', 4)
+    startTitleText.setStroke('#2a4350', 5)
     startTitleText.setShadow(2, 2, '#000000', 0, false, true)
 
     const startHintText = scene.add.text(
         scene.scale.width / 2,
         scene.scale.height / 2 - 46,
-        'Move: A/D or Left/Right\nSwitch layer: Up/Down\nShoot: Space\nPause: Enter\nCollect modules and dodge fire',
+        'THE VERDANT FRONTIER\n\nMove: A/D or Left/Right\nSwitch altitude: Up/Down\nFire arc cannon: Space\nPause: Enter\nSalvage modules. Keep above the fog.',
         {
             fontFamily: 'Arial',
             fontSize: '18px',
@@ -198,7 +231,7 @@ export const createHud = (
         scene.scale.height / 2 + 82,
         150,
         44,
-        0x22c55e,
+        0xd9bb73,
     ).setInteractive({ useHandCursor: true })
 
     startButton.setStrokeStyle(2, 0xffffff, 0.9)
@@ -211,7 +244,7 @@ export const createHud = (
             fontFamily: config.hud.fontFamily,
             fontSize: '22px',
             fontStyle: 'bold',
-            color: '#052e16',
+            color: '#17384a',
         },
     ).setOrigin(0.5)
 
@@ -222,6 +255,7 @@ export const createHud = (
         missionProgressBackground,
         missionProgressFill,
         missionProgressText,
+        layerText,
         moduleSlotBackgrounds,
         moduleSlotTexts,
         pauseText,
@@ -267,7 +301,18 @@ export const updateMissionProgress = (
         hud.missionProgressBackground.width * progressRatio,
         hud.missionProgressBackground.height,
     )
-    hud.missionProgressText.setText(`MISSION ${Math.round(progress)}`)
+    hud.missionProgressText.setText(`ROUTE ${Math.round(progress)}%`)
+}
+
+export const updateLayerText = (hud: Hud, layerName: string) => {
+    const label = layerName === 'Upper air'
+        ? '☀ UPPER SKY'
+        : '♢ FOG BOUNDARY'
+
+    hud.layerText.setText(label)
+    hud.layerText.setColor(
+        layerName === 'Upper air' ? '#fef3c7' : '#d9f99d',
+    )
 }
 
 export const updateModuleSlotTexts = (
@@ -338,7 +383,7 @@ export const setStartVisible = (hud: Hud, isVisible: boolean) => {
 }
 
 const formatScore = (score: number) => {
-    return `Score: ${score}`
+    return `RENOWN ${score}`
 }
 
 const formatModuleSlot = (
@@ -347,12 +392,12 @@ const formatModuleSlot = (
     remainingSeconds?: number,
 ) => {
     if (!label) {
-        return `M${index + 1} -`
+        return `◇ ${index + 1}  EMPTY`
     }
 
     if (remainingSeconds === undefined) {
-        return `M${index + 1} ${label} ∞`
+        return `◆ ${index + 1}  ${label}  ∞`
     }
 
-    return `M${index + 1} ${label} ${remainingSeconds}s`
+    return `◆ ${index + 1}  ${label}  ${remainingSeconds}s`
 }

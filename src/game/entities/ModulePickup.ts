@@ -1,8 +1,9 @@
 import { GameObjects, Math as PhaserMath, Scene } from 'phaser'
 import type { ModuleConfig } from '../config/moduleConfig'
+import { VISUAL_TEXTURES } from '../visuals/visualAssets'
 
 export class ModulePickup {
-    readonly body: GameObjects.Rectangle
+    readonly body: GameObjects.Image
     readonly type: string
 
     private readonly label: GameObjects.Text
@@ -19,18 +20,17 @@ export class ModulePickup {
             PhaserMath.Between(0, config.labels.length - 1)
         ]
         this.speed = config.speed
-        this.body = scene.add.rectangle(
+        this.body = scene.add.image(
             clampedX,
             y,
-            config.width,
-            config.height,
-            config.color,
+            VISUAL_TEXTURES.module,
         )
-        this.body.setStrokeStyle(config.strokeWidth, config.strokeColor)
-        this.label = scene.add.text(clampedX, this.body.y, this.type, {
+        this.body.setDisplaySize(config.width, config.height)
+        this.label = scene.add.text(clampedX + 8, this.body.y, this.type, {
             fontFamily: 'Arial',
-            fontSize: '16px',
-            color: '#111827',
+            fontSize: '12px',
+            fontStyle: 'bold',
+            color: '#e0f2fe',
         }).setOrigin(0.5)
     }
 

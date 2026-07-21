@@ -1,10 +1,11 @@
 import { GameObjects, Math as PhaserMath, Scene } from 'phaser'
 import type { GameConfig } from '../config'
 import type { WeaponParameters } from '../types/gameplay'
+import { VISUAL_TEXTURES } from '../visuals/visualAssets'
 import { Projectile } from './Projectile'
 
 export class Player {
-    readonly object: GameObjects.Polygon
+    readonly object: GameObjects.Image
 
     private readonly scene: Scene
     private readonly config: GameConfig['player']
@@ -165,25 +166,8 @@ export class Player {
     }
 
     private createObject(x: number, y: number) {
-        const shipPoints = [
-            this.config.width / 2,
-            0,
-            this.config.width,
-            this.config.height,
-            this.config.width / 2,
-            this.config.height * 0.78,
-            0,
-            this.config.height,
-        ]
-
-        const object = this.scene.add.polygon(
-            x,
-            y,
-            shipPoints,
-            this.config.color,
-        )
-
-        object.setStrokeStyle(this.config.strokeWidth, this.config.strokeColor)
+        const object = this.scene.add.image(x, y, VISUAL_TEXTURES.player)
+        object.setDisplaySize(this.config.width, this.config.height)
 
         return object
     }

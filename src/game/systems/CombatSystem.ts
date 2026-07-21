@@ -95,6 +95,8 @@ export class CombatSystem {
             return
         }
 
+        this.createEnemyDestroyedEffect(deathX, deathY)
+
         if (enemy.carriesModule) {
             this.callbacks.dropModule(deathX, deathY)
         }
@@ -213,6 +215,27 @@ export class CombatSystem {
             onComplete: () => {
                 effect.destroy()
             },
+        })
+    }
+
+    private createEnemyDestroyedEffect(x: number, y: number) {
+        const core = this.scene.add.circle(x, y, 12, 0xd8b4fe, 0.8)
+        const ring = this.scene.add.circle(x, y, 18)
+            .setStrokeStyle(3, 0x67e8f9, 0.8)
+
+        this.scene.tweens.add({
+            targets: core,
+            alpha: 0,
+            scale: 2.5,
+            duration: 220,
+            onComplete: () => core.destroy(),
+        })
+        this.scene.tweens.add({
+            targets: ring,
+            alpha: 0,
+            scale: 1.8,
+            duration: 300,
+            onComplete: () => ring.destroy(),
         })
     }
 

@@ -1,4 +1,5 @@
 import { GameObjects, Scene } from 'phaser'
+import { VISUAL_TEXTURES } from '../visuals/visualAssets'
 
 type ProjectileConfig = {
     x: number
@@ -12,20 +13,24 @@ type ProjectileConfig = {
 }
 
 export class Projectile {
-    readonly object: GameObjects.Rectangle
+    readonly object: GameObjects.Image
     readonly damage: number
 
     private readonly velocityX: number
     private readonly velocityY: number
 
     constructor(scene: Scene, config: ProjectileConfig) {
-        this.object = scene.add.rectangle(
+        const texture = config.velocityY < 0
+            ? VISUAL_TEXTURES.playerProjectile
+            : VISUAL_TEXTURES.enemyProjectile
+
+        this.object = scene.add.image(
             config.x,
             config.y,
-            config.width,
-            config.height,
-            config.color,
+            texture,
         )
+        this.object.setDisplaySize(config.width, config.height)
+        this.object.setRotation(Math.atan2(config.velocityY, config.velocityX) + Math.PI / 2)
         this.velocityX = config.velocityX
         this.velocityY = config.velocityY
         this.damage = config.damage

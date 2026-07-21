@@ -19,6 +19,8 @@ import type { Star } from '../types/gameplay'
 import type { MissionConfig } from '../types/mission'
 import { DebugOverlay } from '../ui/DebugOverlay'
 import { countEventListeners } from '../helpers/countEventListeners'
+import { SkyBackground } from '../visuals/SkyBackground'
+import { createVisualAssets } from '../visuals/visualAssets'
 import type { UIScene } from './UIScene'
 
 const DEBUG_OVERLAY_ENABLED = (
@@ -31,6 +33,7 @@ export class Game extends Scene {
     private audioContext?: AudioContext
 
     private stars!: Star[]
+    private background!: SkyBackground
 
     private bullets!: Projectile[]
 
@@ -69,6 +72,14 @@ export class Game extends Scene {
         this.events.once(Scenes.Events.SHUTDOWN, () => this.cleanupRun())
 
         const { width, height } = this.scale
+
+        createVisualAssets(this)
+        this.background = new SkyBackground(
+            this,
+            this.missionConfig.layers.items[
+                this.missionConfig.layers.initialLayerIndex
+            ].id,
+        )
 
         if (this.missionConfig.environment.starfieldEnabled) {
             this.createStarfield(width, height)
@@ -166,6 +177,7 @@ export class Game extends Scene {
             runState: this.runState,
             player: this.player,
             moduleSystem: this.moduleSystem,
+            getCurrentLayerName: () => this.layerSystem.getCurrentLayer().name,
             startGame: () => this.runSystem.start(),
             restartGame: () => this.runSystem.restart(),
         })
@@ -208,6 +220,7 @@ export class Game extends Scene {
     }
 
     update(time: number, delta: number) {
+        this.background.update(delta)
         this.updateStarfield(delta)
         this.debugOverlay?.update()
 
@@ -224,11 +237,13 @@ export class Game extends Scene {
             )
 
             if (didShoot) {
+                this.createMuzzleEffect()
                 this.playTone(620, 0.035, 0.035, 'square')
             }
         })
 
         if (this.layerSystem.update()) {
+            this.background.setLayer(this.layerSystem.getCurrentLayer().id)
             this.resetLayerObjects(time)
         }
 
@@ -364,6 +379,7 @@ export class Game extends Scene {
             }
 
             module.collect((type) => this.moduleSystem.collect(type))
+            this.createModulePickupEffect(module.body.x, module.body.y)
         })
 
         this.modulePickups = this.modulePickups.filter((module) => {
@@ -383,6 +399,41 @@ export class Game extends Scene {
         this.enemies = []
         this.enemyBullets = []
         this.modulePickups = []
+    }
+
+    private createMuzzleEffect() {
+        const effect = this.add.circle(
+            this.player.object.x,
+            this.player.object.y - this.config.bullet.yOffset,
+            7,
+            0xfef3c7,
+            0.9,
+        ).setDepth(10)
+
+        this.tweens.add({
+            targets: effect,
+            alpha: 0,
+            scaleX: 0.35,
+            scaleY: 2.2,
+            y: effect.y - 12,
+            duration: 90,
+            onComplete: () => effect.destroy(),
+        })
+    }
+
+    private createModulePickupEffect(x: number, y: number) {
+        const ring = this.add.circle(x, y, 15)
+            .setStrokeStyle(3, 0x7dd3fc, 0.9)
+            .setDepth(10)
+
+        this.tweens.add({
+            targets: ring,
+            alpha: 0,
+            scale: 2.4,
+            y: y - 18,
+            duration: 320,
+            onComplete: () => ring.destroy(),
+        })
     }
 
     private resetLayerObjects(time: number) {
@@ -523,7 +574,7 @@ export class Game extends Scene {
     private getEventHandlerCount() {
         const gameHandlerCount = countEventListeners(this.events) +
             countEventListeners(this.input) +
-            countEventListeners(this.input.keyboard)
+            countEventListeners(this.input.keyboard ?? undefined)
 
         if (!this.scene.isActive('UI')) {
             return gameHandlerCount
@@ -540,6 +591,7 @@ export class Game extends Scene {
         this.enemyBullets.forEach((bullet) => bullet.destroy())
         this.modulePickups.forEach((module) => module.destroy())
         this.stars.forEach((star) => star.object.destroy())
+        this.background.destroy()
         this.player.object.destroy()
         this.shieldVisual.destroy()
 

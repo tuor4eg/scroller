@@ -13,6 +13,7 @@ import {
     updateMissionProgress,
     updateModuleSlotTexts,
     updateScoreText,
+    updateLayerText,
     type Hud,
 } from '../ui/hud'
 
@@ -21,6 +22,7 @@ type UISceneData = {
     runState: RunState
     player: Player
     moduleSystem: ModuleSystem
+    getCurrentLayerName: () => string
     startGame: () => void
     restartGame: () => void
 }
@@ -30,6 +32,7 @@ export class UIScene extends Scene {
     private runState!: RunState
     private player!: Player
     private moduleSystem!: ModuleSystem
+    private getCurrentLayerName!: () => string
     private hud!: Hud
 
     constructor() {
@@ -40,6 +43,7 @@ export class UIScene extends Scene {
         this.runState = data.runState
         this.player = data.player
         this.moduleSystem = data.moduleSystem
+        this.getCurrentLayerName = data.getCurrentLayerName
         this.hud = createHud(
             this,
             this.config,
@@ -84,6 +88,7 @@ export class UIScene extends Scene {
             this.hud,
             this.moduleSystem.getActiveModules(),
         )
+        updateLayerText(this.hud, this.getCurrentLayerName())
         setPauseVisible(this.hud, this.runState.isPaused())
 
         if (this.runState.isGameOver()) {
@@ -107,7 +112,7 @@ export class UIScene extends Scene {
     getEventHandlerCount() {
         return countEventListeners(this.events) +
             countEventListeners(this.input) +
-            countEventListeners(this.input.keyboard) +
+            countEventListeners(this.input.keyboard ?? undefined) +
             countEventListeners(this.hud.startButton)
     }
 }

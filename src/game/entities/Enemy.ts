@@ -4,9 +4,10 @@ import { updateEnemyAttack } from '../helpers/enemyAttack'
 import { updateEnemyMovement } from '../helpers/enemyMovement'
 import type { EnemyAttack, EnemyMovement } from '../types/gameplay'
 import type { Projectile } from './Projectile'
+import { getEnemyTexture } from '../visuals/visualAssets'
 
 export class Enemy {
-    readonly body: GameObjects.Polygon
+    readonly body: GameObjects.Image
     readonly type: EnemyType
     readonly movement: EnemyMovement
     readonly attack?: EnemyAttack
@@ -102,21 +103,8 @@ export class Enemy {
         y: number,
         typeConfig: EnemyConfig['types'][EnemyType],
     ) {
-        const points = [
-            0,
-            0,
-            typeConfig.width,
-            0,
-            typeConfig.width * 0.82,
-            typeConfig.height,
-            typeConfig.width * 0.5,
-            typeConfig.height * 0.68,
-            typeConfig.width * 0.18,
-            typeConfig.height,
-        ]
-
-        const body = this.scene.add.polygon(x, y, points, typeConfig.color)
-        body.setStrokeStyle(this.config.strokeWidth, this.config.strokeColor)
+        const body = this.scene.add.image(x, y, getEnemyTexture(this.type))
+        body.setDisplaySize(typeConfig.width, typeConfig.height)
 
         return body
     }
@@ -153,11 +141,11 @@ export class Enemy {
         this.label = this.scene.add.text(
             x,
             y + this.body.height * 0.38,
-            this.config.types.carrier.label,
+            '◆',
             {
                 fontFamily: 'Arial',
-                fontSize: '16px',
-                color: '#ffffff',
+                fontSize: '12px',
+                color: '#7dd3fc',
             },
         ).setOrigin(0.5)
     }
