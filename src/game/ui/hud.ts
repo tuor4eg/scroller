@@ -9,6 +9,9 @@ export type Hud = {
     missionProgressBackground: GameObjects.Rectangle
     missionProgressFill: GameObjects.Rectangle
     missionProgressText: GameObjects.Text
+    salvageBackground: GameObjects.Rectangle
+    salvageFill: GameObjects.Rectangle
+    salvageText: GameObjects.Text
     layerText: GameObjects.Text
     moduleSlotBackgrounds: GameObjects.Rectangle[]
     moduleSlotTexts: GameObjects.Text[]
@@ -30,11 +33,11 @@ export const createHud = (
         8,
         8,
         scene.scale.width - 16,
-        46,
+        58,
         0x102c3a,
-        0.82,
+        0.62,
     ).setOrigin(0)
-    topPanel.setStrokeStyle(2, 0xd9bb73, 0.8)
+    topPanel.setStrokeStyle(1, 0xd9bb73, 0.5)
 
     scene.add.text(config.hud.healthBarX, 12, 'HULL', {
         fontFamily: config.hud.fontFamily,
@@ -55,8 +58,7 @@ export const createHud = (
         },
     ).setOrigin(1, 0)
 
-    scoreText.setStroke('#1d4ed8', 3)
-    scoreText.setShadow(2, 2, '#000000', 0, false, true)
+    scoreText.setStroke('#17384a', 2)
 
     const healthBarBackground = scene.add.rectangle(
         config.hud.healthBarX,
@@ -112,9 +114,44 @@ export const createHud = (
         },
     ).setOrigin(0.5)
 
+    const salvageBackground = scene.add.rectangle(
+        config.hud.salvageX,
+        config.hud.salvageY,
+        config.hud.salvageWidth,
+        config.hud.salvageHeight,
+        config.hud.salvageBackgroundColor,
+        0.9,
+    ).setOrigin(0)
+
+    salvageBackground.setStrokeStyle(
+        1,
+        config.hud.salvageStrokeColor,
+        0.7,
+    )
+
+    const salvageFill = scene.add.rectangle(
+        config.hud.salvageX,
+        config.hud.salvageY,
+        config.hud.salvageWidth,
+        config.hud.salvageHeight,
+        config.hud.salvageFillColor,
+    ).setOrigin(0)
+
+    const salvageText = scene.add.text(
+        config.hud.salvageX + config.hud.salvageWidth / 2,
+        config.hud.salvageY + config.hud.salvageHeight / 2,
+        'SALVAGE 0/0',
+        {
+            fontFamily: config.hud.fontFamily,
+            fontSize: '9px',
+            fontStyle: 'bold',
+            color: '#fff7d6',
+        },
+    ).setOrigin(0.5)
+
     const layerText = scene.add.text(
         scene.scale.width / 2,
-        60,
+        74,
         '',
         {
             fontFamily: config.hud.fontFamily,
@@ -139,7 +176,7 @@ export const createHud = (
             config.hud.moduleSlotWidth,
             config.hud.moduleSlotHeight,
             0x17384a,
-            0.8,
+            0.62,
         ).setOrigin(0)
 
         moduleSlotBackground.setStrokeStyle(1, 0xd9bb73, 0.7)
@@ -150,7 +187,7 @@ export const createHud = (
             formatModuleSlot(i),
             {
                 fontFamily: config.hud.fontFamily,
-                fontSize: config.hud.moduleFontSize,
+            fontSize: '12px',
                 fontStyle: 'bold',
                 color: '#e0f2fe',
             },
@@ -199,7 +236,7 @@ export const createHud = (
 
     const startTitleText = scene.add.text(
         scene.scale.width / 2,
-        scene.scale.height / 2 - 128,
+        scene.scale.height / 2 - 210,
         'SKYBOUND',
         {
             fontFamily: config.hud.fontFamily,
@@ -215,20 +252,20 @@ export const createHud = (
 
     const startHintText = scene.add.text(
         scene.scale.width / 2,
-        scene.scale.height / 2 - 46,
+        scene.scale.height / 2 - 30,
         'THE VERDANT FRONTIER\n\nMove: A/D or Left/Right\nSwitch altitude: Up/Down\nFire arc cannon: Space\nPause: Enter\nSalvage modules. Keep above the fog.',
         {
             fontFamily: 'Arial',
-            fontSize: '18px',
+            fontSize: '16px',
             color: '#dbeafe',
             align: 'center',
-            lineSpacing: 8,
+            lineSpacing: 6,
         },
     ).setOrigin(0.5)
 
     const startButton = scene.add.rectangle(
         scene.scale.width / 2,
-        scene.scale.height / 2 + 82,
+        scene.scale.height / 2 + 112,
         150,
         44,
         0xd9bb73,
@@ -255,6 +292,9 @@ export const createHud = (
         missionProgressBackground,
         missionProgressFill,
         missionProgressText,
+        salvageBackground,
+        salvageFill,
+        salvageText,
         layerText,
         moduleSlotBackgrounds,
         moduleSlotTexts,
@@ -302,6 +342,20 @@ export const updateMissionProgress = (
         hud.missionProgressBackground.height,
     )
     hud.missionProgressText.setText(`ROUTE ${Math.round(progress)}%`)
+}
+
+export const updateSalvage = (
+    hud: Hud,
+    salvage: number,
+    threshold: number,
+) => {
+    const salvageRatio = PhaserMath.Clamp(salvage / threshold, 0, 1)
+
+    hud.salvageFill.setDisplaySize(
+        hud.salvageBackground.width * salvageRatio,
+        hud.salvageBackground.height,
+    )
+    hud.salvageText.setText(`SALVAGE ${salvage}/${threshold}`)
 }
 
 export const updateLayerText = (hud: Hud, layerName: string) => {

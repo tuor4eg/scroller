@@ -55,6 +55,16 @@ export const PROTOTYPE_MISSION = {
     },
     rewards: {
         initialScore: 0,
+        salvage: {
+            initialThreshold: 12,
+            thresholdGrowth: 4,
+            enemyRewards: {
+                basic: 1,
+                sturdy: 2,
+                heavy: 4,
+                carrier: 5,
+            },
+        },
         bonuses: {
             victory: {
                 score: 0,

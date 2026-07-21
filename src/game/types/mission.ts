@@ -41,6 +41,11 @@ export type MissionConfig = {
     }
     rewards: {
         initialScore: number
+        salvage: {
+            initialThreshold: number
+            thresholdGrowth: number
+            enemyRewards: Record<EnemyType, number>
+        }
         bonuses: {
             victory: {
                 score: number

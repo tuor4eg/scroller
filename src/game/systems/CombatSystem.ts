@@ -4,6 +4,7 @@ import type { Enemy } from '../entities/Enemy'
 import type { Player } from '../entities/Player'
 import type { Projectile } from '../entities/Projectile'
 import type { RunState } from '../state/RunState'
+import type { EnemyType } from '../config/enemyConfig'
 
 type CombatSystemCallbacks = {
     getPlayerProjectiles: () => Projectile[]
@@ -15,6 +16,7 @@ type CombatSystemCallbacks = {
     hasShield: () => boolean
     getScoreRewardMultiplier: () => number
     dropModule: (x: number, y: number) => void
+    awardSalvage: (type: EnemyType) => void
     playerDied: () => void
     playTone: (
         frequency: number,
@@ -100,6 +102,8 @@ export class CombatSystem {
         if (enemy.carriesModule) {
             this.callbacks.dropModule(deathX, deathY)
         }
+
+        this.callbacks.awardSalvage(enemy.type)
 
         this.runState.awardScore(
             enemy.scoreReward,
@@ -204,39 +208,43 @@ export class CombatSystem {
     }
 
     private createHitEffect(x: number, y: number) {
-        const effect = this.scene.add.circle(x, y, 10, 0xffffff, 0.85)
+        const effect = this.scene.add.circle(x, y, 8, 0xffffff, 0.95)
         effect.setStrokeStyle(2, this.config.bullet.color)
 
         this.scene.tweens.add({
             targets: effect,
             alpha: 0,
-            scale: 1.8,
-            duration: 120,
+            scale: 2.2,
+            duration: 150,
             onComplete: () => {
                 effect.destroy()
             },
         })
+
+        this.createRadialParticles(x, y, 5, this.config.bullet.color, 32, 170)
     }
 
     private createEnemyDestroyedEffect(x: number, y: number) {
-        const core = this.scene.add.circle(x, y, 12, 0xd8b4fe, 0.8)
-        const ring = this.scene.add.circle(x, y, 18)
-            .setStrokeStyle(3, 0x67e8f9, 0.8)
+        const core = this.scene.add.circle(x, y, 14, 0xf2c4e0, 0.9)
+        const ring = this.scene.add.circle(x, y, 20)
+            .setStrokeStyle(4, 0x9ceacb, 0.85)
 
         this.scene.tweens.add({
             targets: core,
             alpha: 0,
-            scale: 2.5,
-            duration: 220,
+            scale: 2.8,
+            duration: 260,
             onComplete: () => core.destroy(),
         })
         this.scene.tweens.add({
             targets: ring,
             alpha: 0,
-            scale: 1.8,
-            duration: 300,
+            scale: 2.25,
+            duration: 360,
             onComplete: () => ring.destroy(),
         })
+        this.createRadialParticles(x, y, 9, 0xd59cc9, 58, 330)
+        this.createRadialParticles(x, y, 5, 0xb9e18d, 38, 240)
     }
 
     private createPlayerDamageEffect() {
@@ -259,5 +267,45 @@ export class CombatSystem {
                 effect.destroy()
             },
         })
+        this.createRadialParticles(
+            this.player.object.x,
+            this.player.object.y,
+            8,
+            0xef8354,
+            48,
+            250,
+        )
+    }
+
+    private createRadialParticles(
+        x: number,
+        y: number,
+        count: number,
+        color: number,
+        distance: number,
+        duration: number,
+    ) {
+        for (let index = 0; index < count; index++) {
+            const angle = Math.PI * 2 * index / count + Math.random() * 0.35
+            const particle = this.scene.add.ellipse(
+                x,
+                y,
+                3 + index % 2 * 2,
+                7,
+                color,
+                0.9,
+            ).setRotation(angle)
+
+            this.scene.tweens.add({
+                targets: particle,
+                x: x + Math.cos(angle) * distance,
+                y: y + Math.sin(angle) * distance,
+                alpha: 0,
+                scaleY: 0.25,
+                duration: duration + index * 9,
+                ease: 'Quad.easeOut',
+                onComplete: () => particle.destroy(),
+            })
+        }
     }
 }

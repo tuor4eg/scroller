@@ -50,17 +50,7 @@ export class ModuleSystem {
             return
         }
 
-        const activeModule: ActiveModule = {
-            type,
-            label: type,
-            kind: moduleEffect.kind,
-            remainingMs: moduleEffect.kind === ModuleKind.Temporary
-                ? this.config.duration
-                : undefined,
-            order: this.nextModuleOrder,
-        }
-
-        this.nextModuleOrder += 1
+        const activeModule = this.createActiveModule(type, moduleEffect.kind)
 
         if (this.activeModules.length < this.config.slotCount) {
             this.activeModules.push(activeModule)
@@ -74,6 +64,42 @@ export class ModuleSystem {
         const oldestIndex = this.activeModules.indexOf(oldestModule)
 
         this.activeModules[oldestIndex] = activeModule
+    }
+
+    collectSalvageReward(type: string) {
+        const moduleEffect = this.getEffect(type)
+
+        if (!moduleEffect) {
+            return
+        }
+
+        this.callbacks.playPickupTone()
+
+        if (moduleEffect.kind === ModuleKind.Instant) {
+            this.applyInstantEffect(moduleEffect)
+
+            return
+        }
+
+        if (this.activeModules.length < this.config.slotCount) {
+            this.activeModules.push(
+                this.createActiveModule(type, moduleEffect.kind),
+            )
+
+            return
+        }
+
+        const duplicate = this.activeModules.find((activeModule) => {
+            return activeModule.type === type
+        })
+
+        if (duplicate) {
+            this.refreshTemporaryModule(duplicate)
+
+            return
+        }
+
+        this.activeModules[0] = this.createActiveModule(type, moduleEffect.kind)
     }
 
     update(delta: number) {
@@ -137,6 +163,25 @@ export class ModuleSystem {
         return Object.values(this.config.effects).find((effect) => {
             return effect.type === type
         })
+    }
+
+    private createActiveModule(
+        type: string,
+        kind: ModuleKind.Temporary | ModuleKind.Permanent,
+    ): ActiveModule {
+        const activeModule: ActiveModule = {
+            type,
+            label: type,
+            kind,
+            remainingMs: kind === ModuleKind.Temporary
+                ? this.config.duration
+                : undefined,
+            order: this.nextModuleOrder,
+        }
+
+        this.nextModuleOrder += 1
+
+        return activeModule
     }
 
     private applyInstantEffect(effect: ReturnType<ModuleSystem['getEffect']>) {

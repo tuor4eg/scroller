@@ -10,6 +10,7 @@ export class Player {
     private readonly scene: Scene
     private readonly config: GameConfig['player']
     private readonly bulletConfig: GameConfig['bullet']
+    private readonly engineGlow: GameObjects.Ellipse
     private health: number
     private lastDamage = 0
     private lastShotTime = 0
@@ -28,10 +29,14 @@ export class Player {
         this.bulletConfig = bulletConfig
         this.health = config.maxHealth
         this.object = this.createObject(x, y)
+        this.engineGlow = this.scene.add.ellipse(x, y + config.height * 0.42, 12, 18, 0x8cf4ff, 0.65)
+            .setDepth(this.object.depth - 1)
     }
 
     update(time: number) {
         this.updateInvulnerability(time)
+        this.engineGlow.setPosition(this.object.x, this.object.y + this.config.height * 0.42)
+        this.engineGlow.setScale(0.8 + Math.sin(time * 0.018) * 0.12, 0.9 + Math.sin(time * 0.025) * 0.18)
     }
 
     move(horizontalDirection: number, delta: number) {
@@ -39,6 +44,8 @@ export class Player {
         const distance = this.config.speed * deltaInSeconds
 
         this.object.x += horizontalDirection * distance
+        this.engineGlow.x = this.object.x - horizontalDirection * 5
+        this.object.setTint(horizontalDirection === 0 ? 0xffffff : 0xf4fbff)
 
         const halfPlayerWidth = this.object.width / 2
 
@@ -111,6 +118,11 @@ export class Player {
 
     isInvulnerable() {
         return this.invulnerable
+    }
+
+    destroy() {
+        this.object.destroy()
+        this.engineGlow.destroy()
     }
 
     getRemainingInvulnerabilityTime(time: number) {

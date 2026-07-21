@@ -3,6 +3,7 @@ import { GAME_CONFIG, type GameConfig } from '../config'
 import type { Player } from '../entities/Player'
 import type { RunState } from '../state/RunState'
 import type { ModuleSystem } from '../systems/ModuleSystem'
+import type { SalvageSystem } from '../systems/SalvageSystem'
 import { countEventListeners } from '../helpers/countEventListeners'
 import {
     createHud,
@@ -13,6 +14,7 @@ import {
     updateMissionProgress,
     updateModuleSlotTexts,
     updateScoreText,
+    updateSalvage,
     updateLayerText,
     type Hud,
 } from '../ui/hud'
@@ -22,6 +24,7 @@ type UISceneData = {
     runState: RunState
     player: Player
     moduleSystem: ModuleSystem
+    salvageSystem: SalvageSystem
     getCurrentLayerName: () => string
     startGame: () => void
     restartGame: () => void
@@ -32,6 +35,7 @@ export class UIScene extends Scene {
     private runState!: RunState
     private player!: Player
     private moduleSystem!: ModuleSystem
+    private salvageSystem!: SalvageSystem
     private getCurrentLayerName!: () => string
     private hud!: Hud
 
@@ -43,6 +47,7 @@ export class UIScene extends Scene {
         this.runState = data.runState
         this.player = data.player
         this.moduleSystem = data.moduleSystem
+        this.salvageSystem = data.salvageSystem
         this.getCurrentLayerName = data.getCurrentLayerName
         this.hud = createHud(
             this,
@@ -73,6 +78,11 @@ export class UIScene extends Scene {
 
     update() {
         updateScoreText(this.hud, this.runState.getScore())
+        updateSalvage(
+            this.hud,
+            this.salvageSystem.getSalvage(),
+            this.salvageSystem.getThreshold(),
+        )
         updateHealthBar(
             this.hud,
             this.player.getHealth(),

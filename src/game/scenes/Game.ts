@@ -15,6 +15,7 @@ import { LayerSystem } from '../systems/LayerSystem'
 import { MissionProgress } from '../systems/MissionProgress'
 import { ModuleSystem } from '../systems/ModuleSystem'
 import { RunSystem } from '../systems/RunSystem'
+import { SalvageSystem } from '../systems/SalvageSystem'
 import type { Star } from '../types/gameplay'
 import type { MissionConfig } from '../types/mission'
 import { DebugOverlay } from '../ui/DebugOverlay'
@@ -44,6 +45,7 @@ export class Game extends Scene {
     private modulePickups!: ModulePickup[]
     private moduleSpawner!: ModuleSpawner
     private moduleSystem!: ModuleSystem
+    private salvageSystem!: SalvageSystem
 
     private player!: Player
     private playerController!: PlayerController
@@ -132,6 +134,12 @@ export class Game extends Scene {
                 playPickupTone: () => this.playTone(880, 0.08, 0.06),
             },
         )
+        this.salvageSystem = new SalvageSystem(
+            this.missionConfig.rewards.salvage,
+            {
+                grantModuleReward: () => this.grantRandomModuleReward(),
+            },
+        )
         this.missionProgress = new MissionProgress(
             this.missionConfig,
             this.runState,
@@ -161,6 +169,9 @@ export class Game extends Scene {
                         .scoreRewardMultiplier
                 },
                 dropModule: (x, y) => this.moduleSpawner.drop(x, y),
+                awardSalvage: (type) => {
+                    this.salvageSystem.collectFromEnemy(type)
+                },
                 playerDied: () => {
                     if (this.missionConfig.defeatConditions.playerDeath) {
                         this.runSystem.finish('defeat', 'player-death')
@@ -177,6 +188,7 @@ export class Game extends Scene {
             runState: this.runState,
             player: this.player,
             moduleSystem: this.moduleSystem,
+            salvageSystem: this.salvageSystem,
             getCurrentLayerName: () => this.layerSystem.getCurrentLayer().name,
             startGame: () => this.runSystem.start(),
             restartGame: () => this.runSystem.restart(),
@@ -436,6 +448,41 @@ export class Game extends Scene {
         })
     }
 
+    private grantRandomModuleReward() {
+        const labels = this.config.module.labels
+        const moduleType = labels[PhaserMath.Between(0, labels.length - 1)]
+
+        this.moduleSystem.collectSalvageReward(moduleType)
+        this.createModulePickupEffect(this.player.object.x, this.player.object.y)
+        this.createSalvageRewardEffect(moduleType)
+    }
+
+    private createSalvageRewardEffect(moduleType: string) {
+        const rewardText = this.add.text(
+            this.player.object.x,
+            this.player.object.y - this.player.object.height * 0.75,
+            `SALVAGE COMPLETE\n+ ${moduleType.toUpperCase()}`,
+            {
+                fontFamily: this.config.hud.fontFamily,
+                fontSize: '15px',
+                fontStyle: 'bold',
+                color: '#fff1a8',
+                align: 'center',
+                stroke: '#17384a',
+                strokeThickness: 4,
+            },
+        ).setOrigin(0.5).setDepth(30)
+
+        this.tweens.add({
+            targets: rewardText,
+            y: rewardText.y - 52,
+            alpha: 0,
+            duration: 1100,
+            ease: 'Quad.easeOut',
+            onComplete: () => rewardText.destroy(),
+        })
+    }
+
     private resetLayerObjects(time: number) {
         this.enemies.forEach((enemy) => enemy.destroy())
         this.bullets.forEach((bullet) => bullet.destroy())
@@ -592,7 +639,7 @@ export class Game extends Scene {
         this.modulePickups.forEach((module) => module.destroy())
         this.stars.forEach((star) => star.object.destroy())
         this.background.destroy()
-        this.player.object.destroy()
+        this.player.destroy()
         this.shieldVisual.destroy()
 
         this.enemies = []
